@@ -1,0 +1,64 @@
+# This workflow will build a python wheel and public to github release page
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
+
+name: Python package
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The tag to publish
+        required: true
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12"]
+
+    steps:
+      - name: Set Variable
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          PUSH_TAG: ${{ github.ref }}
+        run: |
+          if [ -z "${INPUT_TAG}"]; then
+            TAG=${PUSH_TAG}
+          else
+            TAG=${INPUT_TAG}
+          fi
+          if [[ "${TAG}" == refs/tags/* ]]; then
+            VERSION="${TAG#refs/tags/}"
+          fi
+          echo "TAG=${TAG}" >> $GITHUB_ENV
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install flake8 pytest
+          python -m pip install build setuptools
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+      - name: Build wheel
+        run: |
+          python -m build -nw
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          name: Release ${{ env.VERSION }}
+          files: dist/*.whl
+          draft: false
+          prerelease: false

@@ -1,0 +1,8 @@
+/dist
+/*.egg-info
+/data
+/build
+log/
+__pycache__/
+*.ipynb
+conf/conf.yml

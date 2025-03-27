@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "shutilspy"
+version = "0.0.3"
+authors = [
+    {name = "shlll", email = "shlll7347@gmail.com"}
+]
+requires-python = ">=3.7"
+description = "common python utils"
+dependencies = ["janus"]
+
+[tool.setuptools]
+packages = ["shutils"]
