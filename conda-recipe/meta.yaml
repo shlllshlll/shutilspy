@@ -1,0 +1,24 @@
+package:
+  name: shutilspy
+  version: 0.0.3
+
+source:
+  path: ..
+
+build:
+  noarch: python
+  script: "{{ PYTHON }} -m pip install . --no-deps -vv"
+
+requirements:
+  host:
+    - python
+    - setuptools
+    - pip
+    - janus
+  run:
+    - python
+    - janus
+
+about:
+  license: MIT
+  summary: 'common python utils'

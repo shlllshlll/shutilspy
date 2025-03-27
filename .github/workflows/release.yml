@@ -19,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.12"]
+        python-version: ["3.13"]
 
     steps:
       - name: Set Variable
@@ -34,31 +34,44 @@ jobs:
           fi
           if [[ "${TAG}" == refs/tags/* ]]; then
             VERSION="${TAG#refs/tags/}"
+          else
+            VERSION="${TAG}"
           fi
           echo "TAG=${TAG}" >> $GITHUB_ENV
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
       - uses: actions/checkout@v4
         with:
           ref: ${{ env.TAG }}
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      # - name: Set up Python ${{ matrix.python-version }}
+      #   uses: actions/setup-python@v5
+      #   with:
+      #     python-version: ${{ matrix.python-version }}
+      - uses: conda-incubator/setup-miniconda@v3
         with:
+          auto-update-conda: true
           python-version: ${{ matrix.python-version }}
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install flake8 pytest
           python -m pip install build setuptools
+          conda install conda-build
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
       - name: Build wheel
         run: |
           python -m build -nw
+      - name: Build conda package
+        run: |
+          OUT_FILE=$(conda build -b --output -c conda-forge conda-recipe)
+          conda build --no-test --no-anaconda-upload -c conda-forge conda-recipe
+          ls -l /usr/share/miniconda/conda-bld/noarch
+          cp $OUT_FILE dist/
       - name: Create Release
         id: create_release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TAG }}
           name: Release ${{ env.VERSION }}
-          files: dist/*.whl
+          files: dist/*
           draft: false
           prerelease: false
