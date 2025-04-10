@@ -7,8 +7,10 @@ Modified By: shlll(shlll7347@gmail.com)
 Brief:
 """
 
+import hashlib
 import inspect
 from typing import Any, Type, TypeVar
+from pathlib import Path
 
 T = TypeVar('T')
 
@@ -72,3 +74,15 @@ def get_class(cls: Type[T], name: str) -> Type[T] | None:
         return subclasses_dict[name]
     else:
         return None
+
+def calculate_md5(file_path: str | Path, buffer_size: int=65536) -> str:
+    md5 = hashlib.md5()
+    
+    with open(file_path, 'rb') as f:
+        while True:
+            data = f.read(buffer_size)
+            if not data:
+                break
+            md5.update(data)
+    
+    return md5.hexdigest()

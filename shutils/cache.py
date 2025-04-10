@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Dict, Any, Awaitable, Callable, ParamSpec, TypeVar
 import pickle
 from collections import OrderedDict
-from .utils import get_callable_info
+from .utils import get_callable_info, calculate_md5
 
 logger = logging.getLogger(__name__)
 
@@ -35,11 +35,13 @@ class PresistentMixin:
             if cache_file is None:
                 return
             self.cache_file = self._proc_dir(cache_file)
+        self.cache_file_md5 = ""
 
         if not self.cache_file.exists():
             return
 
         try:
+            self.cache_file_md5 = calculate_md5(self.cache_file)
             with lzma.open(self.cache_file, "rb") as f:
                 self.cache = pickle.load(f)
             logger.info(f"[PresistentMixin]: Cache loaded from disk: {self.cache_file}")
@@ -52,6 +54,14 @@ class PresistentMixin:
                 return
             self.cache_file = self._proc_dir(cache_file)
         try:
+            if self.cache_file.exists():
+                current_md5 = calculate_md5(self.cache_file)
+                if current_md5 != self.cache_file_md5:
+                    # 此时落盘的cache发生了变化，需要重新读取并merge
+                    with lzma.open(self.cache_file, "rb") as f:
+                        cache = pickle.load(f)
+                        self.cache.update(cache)
+
             with lzma.open(self.cache_file, "wb") as f:
                 pickle.dump(self.cache, f)
             logger.info(f"[PresistentMixin]: Cache saved to disk: {self.cache_file}")
