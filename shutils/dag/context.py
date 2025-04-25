@@ -6,10 +6,15 @@ Author: shlll(shlll7347@gmail.com)
 Modified By: shlll(shlll7347@gmail.com)
 Brief:
 """
+import time
 from typing import TYPE_CHECKING
 from ..rwlock import RWLock, AsyncRWLock
 from .task_state import TaskStateMixin, SyncTaskState, AsyncTaskState
-from .data_white_board import DataWhiteBoardMixin, SyncDataWhiteBoard, AsyncDataWhiteBoard
+from .data_white_board import (
+    DataWhiteBoardMixin,
+    SyncDataWhiteBoard,
+    AsyncDataWhiteBoard,
+)
 
 if TYPE_CHECKING:
     from .task import TaskBase
@@ -31,6 +36,7 @@ class Context(DataWhiteBoardMixin, TaskStateMixin):
         self._child_context_list: list["Context"] = []
         self.__child_context_num: int = 0
         self._runtime = runtime
+        self.awake_time: dict["TaskBase", float] = {}
         if self._runtime:
             self._runtime.sync_counter.increase()
         if parent:
@@ -66,18 +72,22 @@ class Context(DataWhiteBoardMixin, TaskStateMixin):
             return [Context(self._runtime, self) for _ in range(num)]
         else:
             return Context(self._runtime, self)
-    
+
     @property
     def sync_context(self):
         if self._sync_context is None:
             self._sync_context = SyncContext(self)
         return self._sync_context
-    
+
     @property
     def async_context(self):
         if self._async_context is None:
             self._async_context = AsyncContext(self)
         return self._async_context
+
+    def _awake_interval(self, time_interval: float | int, task: "TaskBase") -> None:
+        self.awake_time[task] = time.time() + time_interval
+
 
 class SyncContext(SyncDataWhiteBoard, SyncTaskState):
     def __init__(self, context: Context):
@@ -98,26 +108,27 @@ class SyncContext(SyncDataWhiteBoard, SyncTaskState):
         if self.__context._child_context_list:
             for child in self.__context._child_context_list:
                 child.sync_context.destory()
-    
+
     def create(self, copy_data: bool = False, deep_copy: bool = False):
         new_context = Context(self.__context._runtime)
         if copy_data:
             self.copy(new_context, deep_copy)
         return new_context
 
+
 class AsyncContext(AsyncDataWhiteBoard, AsyncTaskState):
     def __init__(self, context: Context):
         AsyncDataWhiteBoard.__init__(self, context)
         AsyncTaskState.__init__(self, context)
         self.__context = context
-    
+
     async def destory(self):
         """
         Destory the context.
         """
         if self.__context.is_destory():
             return
-        
+
         self.__context.set_destory(True)
         if self.__context._runtime:
             await self.__context._runtime.async_counter.decrease()
@@ -128,7 +139,7 @@ class AsyncContext(AsyncDataWhiteBoard, AsyncTaskState):
         if self.__context._child_context_list:
             for child in self.__context._child_context_list:
                 await child.async_context.destory()
-    
+
     async def create(self, copy_data: bool = False, deep_copy: bool = False):
         new_context = Context(self.__context._runtime)
         if copy_data:
@@ -152,6 +163,6 @@ class OutputContext(Context):
         super().__init__(None)
         if context:
             context.sync_white_board.copy(self)
-    
+
     async def acopy(self, context: Context):
         await context.async_white_board.copy(self)

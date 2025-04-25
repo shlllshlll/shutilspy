@@ -13,4 +13,18 @@ from .context_queue import SyncContextQueue, AsyncContextQueue
 from .dag import DAG
 from .executor import Executor, ExecutorConfig
 from .runtime import Runtime
-from .task import SyncGeneratorTask, SyncImmediateTask, SyncLoopTask, SyncLongrunTask, AsyncLongrunTask, AsyncGeneratorTask, AsyncLoopTask, AsyncImmediateTask, ForSyncGeneratorTask, ForSyncImmediateTask, ForSyncLoopTask, SyncProcessTask
+from .task import (
+    TaskConfig,
+    SyncGeneratorTask,
+    SyncImmediateTask,
+    SyncLoopTask,
+    SyncLongrunTask,
+    AsyncLongrunTask,
+    AsyncGeneratorTask,
+    AsyncLoopTask,
+    AsyncImmediateTask,
+    ForSyncGeneratorTask,
+    ForSyncImmediateTask,
+    ForSyncLoopTask,
+    SyncProcessTask,
+)

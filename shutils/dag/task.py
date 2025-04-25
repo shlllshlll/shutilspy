@@ -21,17 +21,21 @@ from .runtime import Runtime
 from .context_queue import SyncContextQueue, AsyncContextQueue
 from ..rate_limiter import RateLimiter
 
+
 @dataclass
 class Environment:
     runtime: Runtime
     process_pool: ProcessPoolExecutor | None
 
+
 @dataclass
 class TaskConfig:
     retry_times: int = 0
+    retry_interval: int | float | Callable[[Context], float | int] = 0
     parallel_num: int = 0
     calls: int = 0
     period: int = 1
+
 
 class TaskBase(ABC):
     def __init__(self, config: TaskConfig = TaskConfig()):
@@ -77,24 +81,28 @@ class TaskBase(ABC):
 class ForgroundTask(ABC):
     pass
 
+
 class LongrunTask(ABC):
     pass
+
 
 class ShutdownTask(ABC):
     @abstractmethod
     def shutdown(self):
         pass
 
+
 class AShutdownTask(ABC):
     @abstractmethod
     async def shutdown(self):
         pass
 
+
 class SyncTask(TaskBase):
     @abstractmethod
     def call(self, context: Context, env: Environment) -> list[Context]:
         pass
-    
+
     def __call__(self, context: Context, env: Environment) -> list[Context]:
         ret = self.call_before(context)
         if ret:
@@ -102,7 +110,7 @@ class SyncTask(TaskBase):
         ret = self.call(context, env)
         self.call_after(ret)
         return ret
-    
+
 
 class AsyncTask(TaskBase):
     @abstractmethod
@@ -116,7 +124,8 @@ class AsyncTask(TaskBase):
         ret = await self.call(context, env)
         self.call_after(ret)
         return ret
-    
+
+
 class SyncProcessTask(AsyncTask):
     def __init__(
         self,
@@ -125,7 +134,7 @@ class SyncProcessTask(AsyncTask):
     ):
         super().__init__(config)
         self._func = func
-    
+
     @staticmethod
     def _func_wrapper(func: Callable[[Context], list[Context] | Context], data: dict):
         input_context = Context(None)
@@ -133,25 +142,24 @@ class SyncProcessTask(AsyncTask):
         ret = func(input_context)
         if isinstance(ret, Context):
             return ret._data
-        
+
         output_data_list = []
         for context in ret:
             output_data_list.append(context._data)
         return output_data_list
-
 
     async def call(self, context: Context, env: Environment) -> list[Context]:
         if env.process_pool is None:
             raise RuntimeError("process pool is not set")
         loop = asyncio.get_running_loop()
         async with context.async_context.wlock():
-            ret =  await loop.run_in_executor(env.process_pool, self._func_wrapper, self._func, context._data)
+            ret = await loop.run_in_executor(env.process_pool, self._func_wrapper, self._func, context._data)
 
         if isinstance(ret, dict):
             async with context.async_context.wlock():
                 context._data = ret
             return [context]
-        
+
         output_context_list = []
         for data in ret:
             output_context = await context.async_context.create()
@@ -159,6 +167,7 @@ class SyncProcessTask(AsyncTask):
             output_context_list.append(output_context)
         await context.async_context.destory()
         return output_context_list
+
 
 class SyncGeneratorTask(SyncTask, ShutdownTask):
     def __init__(
@@ -211,6 +220,7 @@ class SyncImmediateTask(SyncTask):
     def __repr__(self):
         return f"SyncImmediateTask(func={self._func}, {TaskBase.__repr__(self)})"
 
+
 class SyncLoopTask(SyncGeneratorTask):
     def call(self, context: Context, env: Environment) -> list[Context]:
         need_create_loop_context = isinstance(context, LoopContext) == False
@@ -222,8 +232,9 @@ class SyncLoopTask(SyncGeneratorTask):
                 ret.append(context)
         elif need_create_loop_context is False:
             context.sync_context.destory()
-        
+
         return ret
+
 
 class BackSyncLongrunTask(SyncTask, LongrunTask, ShutdownTask):
     def __init__(
@@ -238,9 +249,7 @@ class BackSyncLongrunTask(SyncTask, LongrunTask, ShutdownTask):
 
     def call(self, context: Context, env: Environment) -> list[Context]:
         if self.__thread is None:
-            self.__thread = threading.Thread(
-                target=self._func, args=(self.__input_queue, env.runtime.sync_queue)
-            )
+            self.__thread = threading.Thread(target=self._func, args=(self.__input_queue, env.runtime.sync_queue))
             self.__thread.start()
         if not self.__thread.is_alive():
             raise RuntimeError("thread is not alive")
@@ -259,9 +268,7 @@ class BackSyncLongrunTask(SyncTask, LongrunTask, ShutdownTask):
 class AsyncLongrunTask(AsyncTask, LongrunTask, AShutdownTask):
     def __init__(
         self,
-        func: Callable[
-            [asyncio.Queue[Context], AsyncContextQueue], Coroutine[Any, Any, None]
-        ],
+        func: Callable[[asyncio.Queue[Context], AsyncContextQueue], Coroutine[Any, Any, None]],
         config: TaskConfig = TaskConfig(),
     ):
         super().__init__(config)
@@ -271,9 +278,7 @@ class AsyncLongrunTask(AsyncTask, LongrunTask, AShutdownTask):
 
     async def call(self, context: Context, env: Environment) -> list[Context]:
         if self.__task is None:
-            self.__task = asyncio.create_task(
-                self._func(self.__input_queue, env.runtime.async_queue)
-            )
+            self.__task = asyncio.create_task(self._func(self.__input_queue, env.runtime.async_queue))
         await self.__input_queue.put(context)
         return []
 
@@ -322,6 +327,7 @@ class AsyncGeneratorTask(AsyncTask, AShutdownTask):
         except GeneratorExit:
             pass
 
+
 class AsyncLoopTask(AsyncGeneratorTask):
     async def call(self, context: Context, env: Environment) -> list[Context]:
         need_create_loop_context = isinstance(context, LoopContext) == False
@@ -334,6 +340,7 @@ class AsyncLoopTask(AsyncGeneratorTask):
         elif need_create_loop_context is False:
             await context.async_context.destory()
         return ret
+
 
 class AsyncImmediateTask(AsyncTask):
     def __init__(
@@ -357,24 +364,29 @@ class AsyncImmediateTask(AsyncTask):
 class ForSyncGeneratorTask(SyncGeneratorTask, ForgroundTask):
     pass
 
+
 class ForSyncImmediateTask(SyncImmediateTask, ForgroundTask):
     pass
+
 
 class ForSyncLoopTask(SyncLoopTask, ForgroundTask):
     pass
 
+
 class SyncLongrunTask(BackSyncLongrunTask, ForgroundTask):
     pass
+
 
 class InTask(SyncTask, ForgroundTask):
     def call(self, context: Context, env: Environment) -> list[Context]:
         return [context]
-    
+
     def __call__(self, context: Context, env: Environment) -> list[Context]:
         return self.call(context, env)
 
+
 class OutTask(AsyncTask):
-    async def call(self, context: Context) -> list[Context]:
+    async def call(self, context: Context, env: Environment) -> list[Context]:
         if isinstance(context, OutputContext):
             return [context]
         else:
@@ -382,6 +394,6 @@ class OutTask(AsyncTask):
             await output_context.acopy(context)
             await context.async_context.destory()
             return [output_context]
-    
-    async def __call__(self, context: Context) -> list[Context]:
-        return await self.call(context)
+
+    async def __call__(self, context: Context, env: Environment) -> list[Context]:
+        return await self.call(context, env)

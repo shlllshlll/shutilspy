@@ -9,10 +9,11 @@ Brief:
 
 from contextlib import asynccontextmanager
 import copy
-import trace
-from typing import Any, Callable
+from typing import Any, Callable, TypeVar
 from dataclasses import dataclass, field
 from ..rwlock import RWLock, AsyncRWLock
+
+T = TypeVar("T")
 
 
 class DataWhiteBoardMixin:
@@ -26,22 +27,21 @@ class DataWhiteBoardMixin:
         self._data = {}
         self._sync_white_board = None
         self._async_white_board = None
-    
+
     @property
     def sync_white_board(self):
         if self._sync_white_board is None:
             self._sync_white_board = SyncDataWhiteBoard(self)
         return self._sync_white_board
-    
+
     @property
     def async_white_board(self):
         if self._async_white_board is None:
             self._async_white_board = AsyncDataWhiteBoard(self)
         return self._async_white_board
-    
+
     def __repr__(self):
         return f"DataWhiteBoard({self._data.keys()})"
-    
 
 
 class SyncDataWhiteBoard:
@@ -68,10 +68,6 @@ class SyncDataWhiteBoard:
         with self.__data_white_board._sync_lock.read():
             return iter(self.__data_white_board._data)
 
-    def __repr__(self):
-        with self.__data_white_board._sync_lock.read():
-            return f"DataWhiteBoard({self.__data_white_board._data.keys()})"
-
     def __bool__(self):
         with self.__data_white_board._sync_lock.read():
             return bool(self.__data_white_board._data)
@@ -87,17 +83,17 @@ class SyncDataWhiteBoard:
     def keys(self):
         with self.__data_white_board._sync_lock.read():
             return self.__data_white_board._data.keys()
-    
+
     def get(self, key, default=None):
         with self.__data_white_board._sync_lock.read():
             return self.__data_white_board._data.get(key, default)
-        
+
     def rlock(self):
         return self.__data_white_board._sync_lock.read()
-    
+
     def wlock(self):
         return self.__data_white_board._sync_lock.write()
-    
+
     def copy(self, new_white_board: "DataWhiteBoardMixin", deep_copy: bool = False):
         with self.__data_white_board._sync_lock.read():
             if deep_copy:
@@ -109,56 +105,56 @@ class SyncDataWhiteBoard:
 
 
 class AsyncDataWhiteBoard:
-    async def read_wrapper(self, func: Callable[..., Any], *args, **kwargs):
+    async def read_wrapper(self, func: Callable[..., T], *args, **kwargs):
         async with self.__data_white_board._async_lock.read():
             return func(*args, **kwargs)
-    
-    async def write_wrapper(self, func: Callable[..., Any], *args, **kwargs):
+
+    async def write_wrapper(self, func: Callable[..., T], *args, **kwargs):
         async with self.__data_white_board._async_lock.write():
             return func(*args, **kwargs)
 
     def __init__(self, data_white_board: DataWhiteBoardMixin):
         self.__data_white_board = data_white_board
 
-    def __setitem__(self, key, value):
+    def set_item(self, key, value):
         return self.write_wrapper(self.__data_white_board.sync_white_board.__setitem__, key, value)
 
-    def __getitem__(self, key):
+    def get_item(self, key):
         return self.read_wrapper(self.__data_white_board.sync_white_board.__getitem__, key)
 
-    def __contains__(self, key):
+    def contains(self, key):
         return self.read_wrapper(self.__data_white_board.sync_white_board.__contains__, key)
 
-    def __len__(self):
+    def len(self):
         return self.read_wrapper(self.__data_white_board.sync_white_board.__len__)
 
-    def __iter__(self):
+    def iter(self):
         return self.read_wrapper(self.__data_white_board.sync_white_board.__iter__)
 
-    def __repr__(self):
+    def repr(self):
         return self.read_wrapper(self.__data_white_board.sync_white_board.__repr__)
-    
-    def __bool__(self):
+
+    def bool(self):
         return self.read_wrapper(self.__data_white_board.sync_white_board.__bool__)
-    
-    def __delitem__(self, key):
+
+    def del_item(self, key):
         return self.write_wrapper(self.__data_white_board.sync_white_board.__delitem__, key)
-        
+
     def set_data(self, **kwargs):
         return self.write_wrapper(self.__data_white_board.sync_white_board.set_data, **kwargs)
-    
+
     def keys(self):
         return self.read_wrapper(self.__data_white_board.sync_white_board.keys)
-    
+
     def get(self, key, default=None):
         return self.read_wrapper(self.__data_white_board.sync_white_board.get, key, default)
-    
+
     @asynccontextmanager
     async def rlock(self):
         async with self.__data_white_board._async_lock.read():
             with self.__data_white_board._sync_lock.read():
                 yield
-    
+
     @asynccontextmanager
     async def wlock(self):
         async with self.__data_white_board._async_lock.write():

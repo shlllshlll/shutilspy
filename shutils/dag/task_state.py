@@ -9,10 +9,13 @@ Brief:
 import random
 import asyncio
 from dataclasses import dataclass
-from typing import Dict, Set, TYPE_CHECKING
+from typing import Dict, Generator, Set, TYPE_CHECKING, Callable, TypeVar
 from ..rwlock import RWLock, AsyncRWLock
+
 if TYPE_CHECKING:
     from .task import TaskBase
+
+T = TypeVar("T")
 
 
 @dataclass
@@ -36,10 +39,9 @@ class TaskStateMixin:
         self._destory: bool = False
 
         self._error_info: ErrorInfo = ErrorInfo()
-    
+
     def __repr__(self):
         return f"TaskState(destory={self._destory}, error_info={self._error_info})"
-        
 
     def is_destory(self) -> bool:
         return self._destory
@@ -50,7 +52,7 @@ class TaskStateMixin:
     @property
     def available_tasks(self) -> Set["TaskBase"]:
         return self._available_tasks
-    
+
     def _add_available_task(self, task: "TaskBase"):
         self._available_tasks.add(task)
 
@@ -79,6 +81,7 @@ class TaskStateMixin:
                 if all(up_task in self._completed_tasks for up_task in down_task.upstream_tasks):
                     self._available_tasks.add(down_task)
 
+
 class SyncTaskState:
     def __init__(self, task_state: TaskStateMixin):
         self.__task_state = task_state
@@ -86,28 +89,30 @@ class SyncTaskState:
     def complete(self, task: "TaskBase"):
         with self.__task_state._task_lock.write():
             self.__task_state._complete(task)
-    
-    def next(self) -> "TaskBase | None":
+
+    def avaliable_task(self):
         with self.__task_state._task_lock.read():
-            if self.__task_state._available_tasks:
-                return random.choice(list(self.__task_state._available_tasks))
-            return None
+            return list(self.__task_state._available_tasks)
+
+
 
 class AsyncTaskState:
     def __init__(self, task_state: TaskStateMixin):
         self.__task_state = task_state
 
-    async def complete(self, task: "TaskBase"):
-        async with self.__task_state._task_alock.write():
-            with self.__task_state._task_lock.write():
-                self.__task_state._complete(task)
-    
-    async def next(self) -> "TaskBase | None":
+    async def read_wrapper(self, func: Callable[..., T], *args, **kwargs):
         async with self.__task_state._task_alock.read():
-            with self.__task_state._task_lock.read():
-                if self.__task_state._available_tasks:
-                    return random.choice(list(self.__task_state._available_tasks))
-                return None
+            return func(*args, **kwargs)
+
+    async def write_wrapper(self, func: Callable[..., T], *args, **kwargs):
+        async with self.__task_state._task_alock.write():
+            return func(*args, **kwargs)
+
+    def complete(self, task: "TaskBase"):
+        return self.write_wrapper(self.__task_state.sync_task_state.complete, task)
+
+    def avaliable_task(self):
+        return self.read_wrapper(self.__task_state.sync_task_state.avaliable_task)
 
     async def retry(self, task: "TaskBase"):
         async with self.__task_state._retry_alock:

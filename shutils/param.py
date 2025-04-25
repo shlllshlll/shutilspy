@@ -10,6 +10,7 @@ Brief:
 import json
 import importlib
 from dataclasses import is_dataclass, fields
+from types import UnionType
 from typing import Any, ForwardRef, TypeVar, Union, Dict, get_origin, get_args, get_type_hints, Type
 from enum import Enum
 
@@ -98,7 +99,7 @@ def dict_to_dataclass(data: Dict[str, Any], cls: Type[T]) -> T:
         origin = get_origin(field_type)
         args = get_args(field_type)
 
-        if origin == Union:
+        if origin == Union or origin == UnionType:
             for item_type in args:
                 try:
                     return process_value(item_type, value, strict=True)
