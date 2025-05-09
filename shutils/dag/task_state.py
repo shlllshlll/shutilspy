@@ -74,10 +74,12 @@ class TaskStateMixin:
 
     def _complete(self, task: "TaskBase"):
         if task not in self._completed_tasks:
-            self._completed_tasks.add(task)
             self._available_tasks.discard(task)
+            self._completed_tasks.add(task)
 
             for down_task in task.downstream_tasks:
+                if down_task in self._completed_tasks:
+                    continue
                 if all(up_task in self._completed_tasks for up_task in down_task.upstream_tasks):
                     self._available_tasks.add(down_task)
 

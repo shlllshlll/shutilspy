@@ -12,6 +12,7 @@ from dataclasses import dataclass
 import logging
 from typing import Coroutine
 import asyncio
+import traceback
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 from .runtime import Runtime
 from .dag import DAG
@@ -24,7 +25,7 @@ from .task import (
     AShutdownTask,
     Environment,
 )
-from .context import Context, OutputContext, StopContext, LoopContext
+from .context import Context, OutputContext, StopContext, LoopContext, RateLimitContext
 from .task_state import ErrorInfo
 from .context_queue import ContextPriority
 
@@ -104,7 +105,7 @@ class Executor:
 
         context_list = []
         try:
-            logger.info(f"[Worker{idx}-{sub_idx}]: Running task {task}")
+            logger.info(f"[Worker{idx}-{sub_idx}]: {in_context} begin running {task}")
             if isinstance(task, ForgroundTask):
                 if isinstance(task, SyncTask):
                     context_list = task(in_context, env)
@@ -121,7 +122,7 @@ class Executor:
                         context_list = await asyncio.to_thread(task, in_context, env)
                 else:
                     raise ValueError(f"[Worker{idx}-{sub_idx}]: Unknown task type: {type(task)}")
-            logger.info(f"[Worker{idx}-{sub_idx}]: Running task {task} done")
+            logger.info(f"[Worker{idx}-{sub_idx}]: {in_context} running {task} done")
         except Exception as e:
             if task.config.retry_times > 0:
                 if await in_context.async_task_state.retry(task) <= task.config.retry_times:
@@ -133,13 +134,16 @@ class Executor:
                         in_context._awake_interval(interval, task)
                     await self.runtime.async_queue.put(in_context)
                     return []
-            logger.error(f"[Worker{idx}-{sub_idx}]: Running task {task} failed, error: {e}")
+            traceback.print_exc()
+            logger.error(f"[Worker{idx}-{sub_idx}]: {in_context} running {task} failed, error: {e}")
             in_context.error_info = ErrorInfo(has_error=True, exception=e, error_node=task.id)
             await in_context.async_context.destory()
 
-        for out_context in context_list:
-            if isinstance(out_context, LoopContext) is False:
+        for idx, out_context in enumerate(context_list):
+            if isinstance(out_context, LoopContext) is False and isinstance(out_context, RateLimitContext) is False:
                 await out_context.async_task_state.complete(task)
+            if isinstance(out_context, RateLimitContext):
+                context_list[idx] = out_context.context
         return context_list
 
     @staticmethod
@@ -172,6 +176,9 @@ class Executor:
                     tasks = [self.__async_limit(semaphore, task) for task in tasks]
                 context_list_list = await asyncio.gather(*tasks)
                 context_list = [context for context_list in context_list_list for context in context_list]
+                if len(context_list_list) > 1:
+                    # need deduplicate
+                    context_list = list(set(context_list))
                 for out_context in context_list:
                     if isinstance(out_context, OutputContext):
                         output_context.append(out_context)

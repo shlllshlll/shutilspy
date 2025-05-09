@@ -7,6 +7,7 @@ Modified By: shlll(shlll7347@gmail.com)
 Brief:
 """
 import time
+import uuid
 from typing import TYPE_CHECKING
 from ..rwlock import RWLock, AsyncRWLock
 from .task_state import TaskStateMixin, SyncTaskState, AsyncTaskState
@@ -15,6 +16,7 @@ from .data_white_board import (
     SyncDataWhiteBoard,
     AsyncDataWhiteBoard,
 )
+from .global_data import debug_mode
 
 if TYPE_CHECKING:
     from .task import TaskBase
@@ -26,9 +28,10 @@ class Context(DataWhiteBoardMixin, TaskStateMixin):
     Context is a class that provides a context for the DAG.
     """
 
-    def __init__(self, runtime: "Runtime | None", parent: "Context | None" = None):
+    def __init__(self, runtime: "Runtime | None", parent: "Context | None" = None, name: str = ""):
         DataWhiteBoardMixin.__init__(self)
         TaskStateMixin.__init__(self)
+        self.id = name if name else str(uuid.uuid4())
         self.__complete_tasks: set["TaskBase"] = set()
         self.parent_rwlock = RWLock()
         self.parent_arwlock = AsyncRWLock()
@@ -49,7 +52,10 @@ class Context(DataWhiteBoardMixin, TaskStateMixin):
         self._async_context = None
 
     def __repr__(self):
-        return f"{self.__class__.__name__}(data={DataWhiteBoardMixin.__repr__(self)}, state={TaskStateMixin.__repr__(self)}, parent={self._parent_context}, child_context_num={self.__child_context_num}, complete_tasks={self.__complete_tasks}, available_tasks={self.available_tasks})"
+        if debug_mode:
+            return f"{self.__class__.__name__}(data={DataWhiteBoardMixin.__repr__(self)}, state={TaskStateMixin.__repr__(self)}, parent={self._parent_context}, child_context_num={self.__child_context_num}, complete_tasks={self.__complete_tasks}, available_tasks={self.available_tasks})"
+        else:
+            return f"{self.__class__.__name__}(id={self.id})"
 
     def child_context_num(self) -> int:
         """
@@ -109,8 +115,8 @@ class SyncContext(SyncDataWhiteBoard, SyncTaskState):
             for child in self.__context._child_context_list:
                 child.sync_context.destory()
 
-    def create(self, copy_data: bool = False, deep_copy: bool = False):
-        new_context = Context(self.__context._runtime)
+    def create(self, copy_data: bool = False, deep_copy: bool = False, name: str = ""):
+        new_context = Context(self.__context._runtime, name=name)
         if copy_data:
             self.copy(new_context, deep_copy)
         return new_context
@@ -140,27 +146,30 @@ class AsyncContext(AsyncDataWhiteBoard, AsyncTaskState):
             for child in self.__context._child_context_list:
                 await child.async_context.destory()
 
-    async def create(self, copy_data: bool = False, deep_copy: bool = False):
-        new_context = Context(self.__context._runtime)
+    async def create(self, copy_data: bool = False, deep_copy: bool = False, name: str = ""):
+        new_context = Context(self.__context._runtime, name=name)
         if copy_data:
             await self.copy(new_context, deep_copy)
         return new_context
 
 
 class LoopContext(Context):
-    def __init__(self, runtime: "Runtime | None", task: "TaskBase"):
-        super().__init__(runtime)
+    def __init__(self, runtime: "Runtime | None", task: "TaskBase", name: str = "LoopContext"):
+        super().__init__(runtime, name=name)
         self._add_available_task(task)
 
+class RateLimitContext(Context):
+    def __init__(self, context: Context):
+        self.context = context
 
 class StopContext(Context):
-    def __init__(self):
-        super().__init__(None)
+    def __init__(self, name: str = "StopContext"):
+        super().__init__(None, name=name)
 
 
 class OutputContext(Context):
-    def __init__(self, context: Context | None = None):
-        super().__init__(None)
+    def __init__(self, context: Context | None = None, name: str = "OutputContext"):
+        super().__init__(None, name=name)
         if context:
             context.sync_white_board.copy(self)
 

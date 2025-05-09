@@ -16,11 +16,15 @@ class DAG:
         self.tasks: dict[str, TaskBase] = {}
         self.in_task: InTask = InTask()
         self.out_task: OutTask = OutTask()
+        self.tasks[self.in_task.id] = self.in_task
+        self.tasks[self.out_task.id] = self.out_task
         self.end_tasks: set[TaskBase] = set()
         self.start_tasks: set[TaskBase] = set()
 
-    def add_task(self, task: TaskBase, dependencies: Iterable[TaskBase] = []):
+    def add_task(self, task: TaskBase, dependencies: Iterable[TaskBase] | TaskBase = []):
         self.tasks[task.id] = task
+        if isinstance(dependencies, TaskBase):
+            dependencies = [dependencies]
         for dependency in dependencies:
             task.add_upstream(dependency)
         if not dependencies:

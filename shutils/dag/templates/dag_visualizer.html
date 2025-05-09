@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>DAG Visualizer</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #f5f5f5;
+        }
+        .graph-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            overflow: auto;
+            transform-origin: 0 0;
+            cursor: grab;
+        }
+        .graph-container.panning {
+            cursor: grabbing;
+        }
+        .node {
+            position: absolute;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: #69c0ff;
+            border: 2px solid #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: move;
+            z-index: 2;
+        }
+        .node.input-output {
+            background: #ff7875;
+        }
+        .node-label {
+            color: #333;
+            font-family: Arial, sans-serif;
+            font-size: 12px;
+            font-weight: 500;
+            user-select: none;
+        }
+        .link {
+            position: absolute;
+            height: 2px;
+            background: #999;
+            transform-origin: 0 0;
+            z-index: 1;
+        }
+        .zoom-controls {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: white;
+            padding: 10px;
+            border-radius: 4px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            z-index: 1000;
+        }
+        .zoom-controls button {
+            width: 32px;
+            height: 32px;
+            margin: 0 4px;
+            border: 1px solid #d9d9d9;
+            background: white;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .zoom-controls button:hover {
+            background: #f5f5f5;
+        }
+        .zoom-controls .zoom-level {
+            display: inline-block;
+            margin: 0 8px;
+            min-width: 40px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="graph-container" id="graph"></div>
+    <div class="zoom-controls">
+        <button id="zoom-out">-</button>
+        <span class="zoom-level">100%</span>
+        <button id="zoom-in">+</button>
+    </div>
+    <script>
+        const container = document.getElementById('graph');
+        const zoomLevel = document.querySelector('.zoom-level');
+        let nodes = [];
+        let links = [];
+        let nodeSpacing = 100;
+        let dragNode = null;
+        let startX = 0;
+        let startY = 0;
+        let currentScale = 1;
+        let isPanning = false;
+        let panStartX = 0;
+        let panStartY = 0;
+        let translateX = 0;
+        let translateY = 0;
+
+        // Zoom functions
+        function updateZoom(scale) {
+            currentScale = Math.max(0.1, Math.min(2, scale));
+            updateTransform();
+            zoomLevel.textContent = `${Math.round(currentScale * 100)}%`;
+        }
+
+        function updateTransform() {
+            container.style.transform = `translate(${translateX}px, ${translateY}px) scale(${currentScale})`;
+        }
+
+        document.getElementById('zoom-in').addEventListener('click', () => {
+            updateZoom(currentScale + 0.1);
+        });
+
+        document.getElementById('zoom-out').addEventListener('click', () => {
+            updateZoom(currentScale - 0.1);
+        });
+
+        // Mouse wheel zoom
+        container.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const delta = e.deltaY > 0 ? -0.1 : 0.1;
+            updateZoom(currentScale + delta);
+        });
+
+        // Pan functionality
+        container.addEventListener('mousedown', (e) => {
+            const nodeElement = e.target.closest('.node');
+            if (nodeElement) {
+                dragNode = nodes.find(node => node.element === nodeElement);
+                if (dragNode) {
+                    // Account for scale when calculating initial position
+                    startX = (e.clientX - translateX) / currentScale - dragNode.x;
+                    startY = (e.clientY - translateY) / currentScale - dragNode.y;
+                    e.preventDefault();
+                    return;
+                }
+            }
+            
+            // Start panning if clicking on empty space
+            isPanning = true;
+            panStartX = e.clientX - translateX;
+            panStartY = e.clientY - translateY;
+            container.classList.add('panning');
+            e.preventDefault();
+        });
+
+        container.addEventListener('mousemove', (e) => {
+            if (isPanning) {
+                translateX = e.clientX - panStartX;
+                translateY = e.clientY - panStartY;
+                updateTransform();
+            } else if (dragNode) {
+                // Account for scale when updating node position
+                dragNode.x = (e.clientX - translateX) / currentScale - startX;
+                dragNode.y = (e.clientY - translateY) / currentScale - startY;
+                updatePositions();
+            }
+        });
+
+        container.addEventListener('mouseup', () => {
+            if (isPanning) {
+                container.classList.remove('panning');
+            }
+            isPanning = false;
+            dragNode = null;
+        });
+
+        container.addEventListener('mouseleave', () => {
+            if (isPanning) {
+                container.classList.remove('panning');
+            }
+            isPanning = false;
+            dragNode = null;
+        });
+
+        // Fetch graph data
+        fetch('/api/dag')
+            .then(response => response.json())
+            .then(data => {
+                nodes = data.nodes;
+                links = data.links;
+                initializeLayout();
+                createElements();
+            });
+
+        // Initialize node positions
+        function initializeLayout() {
+            const levels = {};
+            const visited = new Set();
+            
+            // Find input nodes (nodes with no incoming links)
+            const inputNodes = nodes.filter(node => 
+                !links.some(link => link.target === node.id)
+            );
+            
+            // Assign levels using BFS
+            function assignLevels(startNodes, level) {
+                const nextLevel = [];
+                for (const node of startNodes) {
+                    if (!visited.has(node.id)) {
+                        visited.add(node.id);
+                        if (!levels[level]) levels[level] = [];
+                        levels[level].push(node);
+                        
+                        // Find connected nodes
+                        const connectedNodes = links
+                            .filter(link => link.source === node.id)
+                            .map(link => nodes.find(n => n.id === link.target));
+                        nextLevel.push(...connectedNodes);
+                    }
+                }
+                if (nextLevel.length > 0) {
+                    assignLevels(nextLevel, level + 1);
+                }
+            }
+            
+            assignLevels(inputNodes, 0);
+            
+            // Position nodes
+            Object.entries(levels).forEach(([level, levelNodes]) => {
+                const levelWidth = levelNodes.length * nodeSpacing;
+                const startX = (container.clientWidth - levelWidth) / 2;
+                levelNodes.forEach((node, index) => {
+                    node.x = startX + index * nodeSpacing;
+                    node.y = parseInt(level) * nodeSpacing + container.clientHeight / 4;
+                });
+            });
+        }
+
+        // Create DOM elements
+        function createElements() {
+            // Create links
+            links.forEach(link => {
+                const linkElement = document.createElement('div');
+                linkElement.className = 'link';
+                container.appendChild(linkElement);
+                link.element = linkElement;
+            });
+
+            // Create nodes
+            nodes.forEach(node => {
+                const nodeElement = document.createElement('div');
+                nodeElement.className = 'node';
+                if (node.type === 'InTask' || node.type === 'OutTask') {
+                    nodeElement.classList.add('input-output');
+                }
+                
+                const label = document.createElement('span');
+                label.className = 'node-label';
+                label.textContent = node.id;
+                nodeElement.appendChild(label);
+                
+                container.appendChild(nodeElement);
+                node.element = nodeElement;
+            });
+
+            updatePositions();
+        }
+
+        // Update positions of all elements
+        function updatePositions() {
+            // Update node positions
+            nodes.forEach(node => {
+                node.element.style.left = `${node.x - 20}px`;  // Center the node
+                node.element.style.top = `${node.y - 20}px`;
+            });
+
+            // Update link positions
+            links.forEach(link => {
+                const sourceNode = nodes.find(n => n.id === link.source);
+                const targetNode = nodes.find(n => n.id === link.target);
+                if (!sourceNode || !targetNode) return;
+
+                const dx = targetNode.x - sourceNode.x;
+                const dy = targetNode.y - sourceNode.y;
+                const length = Math.sqrt(dx * dx + dy * dy);
+                const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+
+                link.element.style.width = `${length}px`;
+                link.element.style.left = `${sourceNode.x}px`;
+                link.element.style.top = `${sourceNode.y}px`;
+                link.element.style.transform = `rotate(${angle}deg)`;
+            });
+        }
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            initializeLayout();
+            updatePositions();
+        });
+    </script>
+</body>
+</html> 

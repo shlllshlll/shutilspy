@@ -16,7 +16,7 @@ from inspect import isgenerator, isasyncgen
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Generator, Coroutine, AsyncGenerator
 import queue
-from .context import Context, StopContext, LoopContext, OutputContext
+from .context import Context, StopContext, LoopContext, OutputContext, RateLimitContext
 from .runtime import Runtime
 from .context_queue import SyncContextQueue, AsyncContextQueue
 from ..rate_limiter import RateLimiter
@@ -38,8 +38,8 @@ class TaskConfig:
 
 
 class TaskBase(ABC):
-    def __init__(self, config: TaskConfig = TaskConfig()):
-        self.id = str(uuid.uuid4())
+    def __init__(self, func: Callable | None, config: TaskConfig = TaskConfig(), name: str = ""):
+        self.id = str(uuid.uuid4()) if not name else name
         self.upstream_tasks: set[TaskBase] = set()
         self.downstream_tasks: set[TaskBase] = set()
         self.config = config
@@ -61,7 +61,7 @@ class TaskBase(ABC):
 
         # qps control
         if self.rate_limiter is not None and not self.rate_limiter.allow():
-            return context
+            return RateLimitContext(context)
 
         return None
 
@@ -131,8 +131,9 @@ class SyncProcessTask(AsyncTask):
         self,
         func: Callable[[Context], list[Context] | Context],
         config: TaskConfig = TaskConfig(),
+        name: str = ""
     ):
-        super().__init__(config)
+        super().__init__(func, config, name)
         self._func = func
 
     @staticmethod
@@ -174,8 +175,9 @@ class SyncGeneratorTask(SyncTask, ShutdownTask):
         self,
         func: Callable[[], Generator[Context | list[Context] | None, Context, None]],
         config: TaskConfig = TaskConfig(),
+        name: str = ""
     ):
-        super().__init__(config)
+        super().__init__(func, config, name)
         self._generator = func()
         if not isgenerator(self._generator):
             raise ValueError("func must be a generator function")
@@ -205,16 +207,19 @@ class SyncGeneratorTask(SyncTask, ShutdownTask):
 class SyncImmediateTask(SyncTask):
     def __init__(
         self,
-        func: Callable[[Context], list[Context] | Context],
+        func: Callable[[Context], list[Context] | Context | None],
         config: TaskConfig = TaskConfig(),
+        name: str = ""
     ):
-        super().__init__(config)
+        super().__init__(func, config, name)
         self._func = func
 
     def call(self, context: Context, env: Environment) -> list[Context]:
-        ret: list[Context] | Context = self._func(context)
+        ret = self._func(context)
         if isinstance(ret, Context):
             return [ret]
+        elif ret is None:
+            return []
         return ret
 
     def __repr__(self):
@@ -241,8 +246,9 @@ class BackSyncLongrunTask(SyncTask, LongrunTask, ShutdownTask):
         self,
         func: Callable[[queue.Queue[Context], SyncContextQueue], None],
         config: TaskConfig = TaskConfig(),
+        name: str = ""
     ):
-        super().__init__(config)
+        super().__init__(func, config, name)
         self.__input_queue = queue.Queue()
         self._func = func
         self.__thread = None
@@ -270,8 +276,9 @@ class AsyncLongrunTask(AsyncTask, LongrunTask, AShutdownTask):
         self,
         func: Callable[[asyncio.Queue[Context], AsyncContextQueue], Coroutine[Any, Any, None]],
         config: TaskConfig = TaskConfig(),
+        name: str = ""
     ):
-        super().__init__(config)
+        super().__init__(func, config, name)
         self.__input_queue = asyncio.Queue()
         self.__task = None
         self._func = func
@@ -297,8 +304,9 @@ class AsyncGeneratorTask(AsyncTask, AShutdownTask):
         self,
         func: Callable[[], AsyncGenerator[Context | list[Context] | None, Context]],
         config: TaskConfig = TaskConfig(),
+        name: str = ""
     ):
-        super().__init__(config)
+        super().__init__(func,config, name)
         self.__generator = func()
         if not isasyncgen(self.__generator):
             raise ValueError("func must be a async generator function")
@@ -345,16 +353,19 @@ class AsyncLoopTask(AsyncGeneratorTask):
 class AsyncImmediateTask(AsyncTask):
     def __init__(
         self,
-        func: Callable[[Context], Coroutine[Any, Any, list[Context] | Context]],
+        func: Callable[[Context], Coroutine[Any, Any, list[Context] | Context | None]],
         config: TaskConfig = TaskConfig(),
+        name: str = ""
     ):
-        super().__init__(config)
+        super().__init__(func, config, name)
         self._func = func
 
     async def call(self, context: Context, env: Environment) -> list[Context]:
         ret = await self._func(context)
         if isinstance(ret, Context):
             return [ret]
+        elif ret is None:
+            return []
         return ret
 
     def __repr__(self):
@@ -378,6 +389,9 @@ class SyncLongrunTask(BackSyncLongrunTask, ForgroundTask):
 
 
 class InTask(SyncTask, ForgroundTask):
+    def __init__(self, name: str = "#InTask"):
+        super().__init__(None, name=name)
+
     def call(self, context: Context, env: Environment) -> list[Context]:
         return [context]
 
@@ -386,6 +400,9 @@ class InTask(SyncTask, ForgroundTask):
 
 
 class OutTask(AsyncTask):
+    def __init__(self, name: str = "#OutTask"):
+        super().__init__(None, name=name)
+        
     async def call(self, context: Context, env: Environment) -> list[Context]:
         if isinstance(context, OutputContext):
             return [context]
