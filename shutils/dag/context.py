@@ -57,27 +57,6 @@ class Context(DataWhiteBoardMixin, TaskStateMixin):
         else:
             return f"{self.__class__.__name__}(id={self.id})"
 
-    def child_context_num(self) -> int:
-        """
-        Get the number of child contexts.
-        """
-        with self.parent_rwlock.read():
-            return self.__child_context_num
-
-    def parent_context(self) -> "Context | None":
-        """
-        Get the parent context.
-        """
-        return self._parent_context
-
-    def create_child(self, num: int = 0):
-        """
-        Create a child context.
-        """
-        if num:
-            return [Context(self._runtime, self) for _ in range(num)]
-        else:
-            return Context(self._runtime, self)
 
     @property
     def sync_context(self):
@@ -120,6 +99,34 @@ class SyncContext(SyncDataWhiteBoard, SyncTaskState):
         if copy_data:
             self.copy(new_context, deep_copy)
         return new_context
+    
+    def child_context_num(self) -> int:
+        """
+        Get the number of child contexts.
+        """
+        with self.__context.parent_rwlock.read():
+            return self.__context.__child_context_num
+    
+    def iter_child_context(self):
+        with self.__context.parent_rwlock.read():
+            for child in self.__context._child_context_list:
+                yield child
+
+    def parent_context(self) -> "Context | None":
+        """
+        Get the parent context.
+        """
+        with self.__context.parent_rwlock.read():
+            return self.__context._parent_context
+
+    def create_child(self, num: int = 0):
+        """
+        Create a child context.
+        """
+        if num:
+            return [Context(self.__context._runtime, self.__context) for _ in range(num)]
+        else:
+            return Context(self.__context._runtime, self.__context)
 
 
 class AsyncContext(AsyncDataWhiteBoard, AsyncTaskState):
@@ -151,7 +158,40 @@ class AsyncContext(AsyncDataWhiteBoard, AsyncTaskState):
         if copy_data:
             await self.copy(new_context, deep_copy)
         return new_context
+    
+    async def child_context_num(self) -> int:
+        async with self.__context.parent_arwlock.read():
+            with self.__context.parent_rwlock.read():
+                return self.__context.__child_context_num
 
+    async def iter_child_context(self):
+        async with self.__context.parent_arwlock.read():
+            with self.__context.parent_rwlock.read():
+                for child in self.__context._child_context_list:
+                    yield child
+    
+    async def partent_context(self):
+        async with self.__context.parent_arwlock.read():
+            with self.__context.parent_rwlock.read():
+                return self.__context._parent_context
+    
+    async def create_child(self, num: int = 0):
+        if self.__context._parent_context is not None:
+            raise ValueError("parent context must be a root context")
+        num = num if num else 1
+        context = []
+        for _ in range(num):
+            sub_context = Context(self.__context._runtime)
+            async with self.__context.parent_arwlock.write():
+                with self.__context.parent_rwlock.write():
+                    self.__context._child_context_list.append(sub_context)
+                    self.__context.__child_context_num += 1
+            context.append(sub_context)
+        
+        if num:
+            return context
+        else:
+            return context[0]
 
 class LoopContext(Context):
     def __init__(self, runtime: "Runtime | None", task: "TaskBase", name: str = "LoopContext"):

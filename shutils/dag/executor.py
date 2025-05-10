@@ -10,7 +10,7 @@ Brief:
 import time
 from dataclasses import dataclass
 import logging
-from typing import Coroutine
+from typing import Coroutine, Iterable
 import asyncio
 import traceback
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
@@ -179,6 +179,7 @@ class Executor:
                 if len(context_list_list) > 1:
                     # need deduplicate
                     context_list = list(set(context_list))
+                await self.__context_gc(in_context, context_list)
                 for out_context in context_list:
                     if isinstance(out_context, OutputContext):
                         output_context.append(out_context)
@@ -193,3 +194,25 @@ class Executor:
                 logger.info(f"[Worker{idx}]: context queue get timeout, skip")
                 continue
         return output_context
+    
+    async def __context_gc(self, in_context: Iterable[Context] | Context, output_context: Iterable[Context]):
+        if isinstance(in_context, Context):
+            in_context = [in_context]
+        in_context_set = set(in_context)
+        out_context_set = set(output_context)
+        inner_context_set = in_context_set & out_context_set
+        in_context_set = in_context_set - inner_context_set
+
+        for context in output_context:
+            parent_context = await context.async_context.partent_context()
+            if parent_context is not None:
+                out_context_set.add(parent_context)
+            async for child_context in context.async_context.iter_child_context():
+                out_context_set.add(child_context)
+            
+        in_context_set = in_context_set - out_context_set
+        for context in in_context_set:
+            logger.info(f"[ContextGC]: {context} is not in output context, destory")
+            await context.async_context.destory()
+            
+
