@@ -204,7 +204,7 @@ class Executor:
         in_context_set = in_context_set - inner_context_set
 
         for context in output_context:
-            parent_context = await context.async_context.partent_context()
+            parent_context = await context.async_context.parent_context()
             if parent_context is not None:
                 out_context_set.add(parent_context)
             async for child_context in context.async_context.iter_child_context():

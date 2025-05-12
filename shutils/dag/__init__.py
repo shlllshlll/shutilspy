@@ -18,15 +18,17 @@ from .task import (
     TaskBase,
     SyncGeneratorTask,
     SyncImmediateTask,
+    SyncImmediateShutdownTask,
+    SyncProcessTask,
     SyncLoopTask,
     SyncLongrunTask,
     AsyncLongrunTask,
     AsyncGeneratorTask,
     AsyncLoopTask,
     AsyncImmediateTask,
+    AsyncImmediateShutdownTask,
     ForSyncGeneratorTask,
     ForSyncImmediateTask,
     ForSyncLoopTask,
-    SyncProcessTask,
 )
 from .visualizer import start_visualizer

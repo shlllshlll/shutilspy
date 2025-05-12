@@ -14,13 +14,21 @@ import threading
 import uuid
 from inspect import isgenerator, isasyncgen
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Generator, Coroutine, AsyncGenerator
+from typing import Any, Callable, Generator, Coroutine, AsyncGenerator, Protocol
 import queue
 from .context import Context, StopContext, LoopContext, OutputContext, RateLimitContext
 from .runtime import Runtime
 from .context_queue import SyncContextQueue, AsyncContextQueue
 from ..rate_limiter import RateLimiter
 
+
+class ShutdownCallableProtocol(Protocol):
+    def __call__(self, context: Context) -> list[Context] | Context | None: ...
+    def shutdown(self) -> None: ...
+
+class AsyncShutdownCallableProtocol(Protocol):
+    async def __call__(self, context: Context) -> list[Context] | Context | None: ...
+    async def shutdown(self) -> None: ...
 
 @dataclass
 class Environment:
@@ -225,6 +233,17 @@ class SyncImmediateTask(SyncTask):
     def __repr__(self):
         return f"SyncImmediateTask(func={self._func}, {TaskBase.__repr__(self)})"
 
+class SyncImmediateShutdownTask(SyncImmediateTask, ShutdownTask):
+    def __init__(
+        self,
+        shutdown_callable: ShutdownCallableProtocol,
+        config: TaskConfig = TaskConfig(),
+        name: str = ""
+    ):
+        super().__init__(shutdown_callable, config, name)
+    
+    def shutdown(self):
+        self._func.shutdown()
 
 class SyncLoopTask(SyncGeneratorTask):
     def call(self, context: Context, env: Environment) -> list[Context]:
@@ -241,10 +260,10 @@ class SyncLoopTask(SyncGeneratorTask):
         return ret
 
 
-class BackSyncLongrunTask(SyncTask, LongrunTask, ShutdownTask):
+class SyncLongrunTask(SyncTask, LongrunTask, ShutdownTask):
     def __init__(
         self,
-        func: Callable[[queue.Queue[Context], SyncContextQueue], None],
+        func: Callable[[queue.Queue[tuple[Context, queue.Queue[list[Context] | Context | None]]]], None],
         config: TaskConfig = TaskConfig(),
         name: str = ""
     ):
@@ -255,11 +274,17 @@ class BackSyncLongrunTask(SyncTask, LongrunTask, ShutdownTask):
 
     def call(self, context: Context, env: Environment) -> list[Context]:
         if self.__thread is None:
-            self.__thread = threading.Thread(target=self._func, args=(self.__input_queue, env.runtime.sync_queue))
+            self.__thread = threading.Thread(target=self._func, args=(self.__input_queue,))
             self.__thread.start()
         if not self.__thread.is_alive():
             raise RuntimeError("thread is not alive")
-        self.__input_queue.put(context)
+        future = queue.Queue()
+        self.__input_queue.put((context, future))
+        result = future.get()
+        if isinstance(result, Context):
+            return [result]
+        elif isinstance(result, list):
+            return result
         return []
 
     def __repr__(self):
@@ -267,14 +292,14 @@ class BackSyncLongrunTask(SyncTask, LongrunTask, ShutdownTask):
 
     def shutdown(self):
         if self.__thread and self.__thread.is_alive():
-            self.__input_queue.put(StopContext())
+            self.__input_queue.put((StopContext(), queue.Queue()))
             self.__thread.join()
 
 
 class AsyncLongrunTask(AsyncTask, LongrunTask, AShutdownTask):
     def __init__(
         self,
-        func: Callable[[asyncio.Queue[Context], AsyncContextQueue], Coroutine[Any, Any, None]],
+        func: Callable[[asyncio.Queue[tuple[Context, asyncio.Future]]], Coroutine[Any, Any, None]],
         config: TaskConfig = TaskConfig(),
         name: str = ""
     ):
@@ -285,8 +310,15 @@ class AsyncLongrunTask(AsyncTask, LongrunTask, AShutdownTask):
 
     async def call(self, context: Context, env: Environment) -> list[Context]:
         if self.__task is None:
-            self.__task = asyncio.create_task(self._func(self.__input_queue, env.runtime.async_queue))
-        await self.__input_queue.put(context)
+            self.__task = asyncio.create_task(self._func(self.__input_queue))
+        future = asyncio.Future()
+        await self.__input_queue.put((context, future))
+        result = await future
+
+        if isinstance(result, Context):
+            return [result]
+        elif isinstance(result, list):
+            return result
         return []
 
     def __repr__(self):
@@ -294,7 +326,7 @@ class AsyncLongrunTask(AsyncTask, LongrunTask, AShutdownTask):
 
     async def shutdown(self):
         if self.__task:
-            await self.__input_queue.put(StopContext())
+            await self.__input_queue.put((StopContext(), asyncio.Future()))
             await self.__task
             self.__task = None
 
@@ -372,6 +404,18 @@ class AsyncImmediateTask(AsyncTask):
         return f"AsyncImmediateTask(func={self._func}, {TaskBase.__repr__(self)})"
 
 
+class AsyncImmediateShutdownTask(AsyncImmediateTask, AShutdownTask):
+    def __init__(
+        self,
+        shutdown_callable: AsyncShutdownCallableProtocol,
+        config: TaskConfig = TaskConfig(),
+        name: str = ""
+    ):
+        super().__init__(shutdown_callable, config, name)
+    
+    async def shutdown(self):
+        await self._func.shutdown()
+
 class ForSyncGeneratorTask(SyncGeneratorTask, ForgroundTask):
     pass
 
@@ -383,9 +427,6 @@ class ForSyncImmediateTask(SyncImmediateTask, ForgroundTask):
 class ForSyncLoopTask(SyncLoopTask, ForgroundTask):
     pass
 
-
-class SyncLongrunTask(BackSyncLongrunTask, ForgroundTask):
-    pass
 
 
 class InTask(SyncTask, ForgroundTask):
