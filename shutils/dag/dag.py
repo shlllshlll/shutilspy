@@ -16,8 +16,6 @@ class DAG:
         self.tasks: dict[str, TaskBase] = {}
         self.in_task: InTask = InTask()
         self.out_task: OutTask = OutTask()
-        self.tasks[self.in_task.id] = self.in_task
-        self.tasks[self.out_task.id] = self.out_task
         self.end_tasks: set[TaskBase] = set()
         self.start_tasks: set[TaskBase] = set()
 
@@ -43,3 +41,7 @@ class DAG:
             if not task.downstream_tasks:
                 self.end_tasks.add(task)
                 self.add_task(self.out_task, [task])
+        
+        # 最后将输入和输出任务添加到tasks列表中
+        self.tasks[self.in_task.id] = self.in_task
+        self.tasks[self.out_task.id] = self.out_task

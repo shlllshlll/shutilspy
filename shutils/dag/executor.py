@@ -166,7 +166,7 @@ class Executor:
 
                     avaliable_tasks = await in_context.async_task_state.avaliable_task()
                     if not avaliable_tasks:
-                        logger.error(f"[Worker{idx}]: no avaliable task")
+                        logger.error(f"[Worker{idx}]: Context {in_context} do not have avaliable task, will destory")
                         await in_context.async_context.destory()
                         continue
 

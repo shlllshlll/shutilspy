@@ -9,8 +9,12 @@ Brief:
 
 import asyncio
 import threading
+from collections import deque
 from typing import Coroutine
 import concurrent.futures
+from .task import TaskBase
+from .context import Context
+
 
 def get_loop_safe_runner(coro: Coroutine) -> asyncio.Future | concurrent.futures.Future:
     """根据当前线程决定如何运行协程"""
@@ -27,3 +31,46 @@ def get_loop_safe_runner(coro: Coroutine) -> asyncio.Future | concurrent.futures
         # 如果没有运行中的事件循环，可能是在另一个线程中
         # 这种情况下可能需要特殊处理
         raise RuntimeError("No running event loop - cannot run coroutine")
+
+def __mask_common(task_list: TaskBase | list[TaskBase], mask_self: bool, up_down: str):
+    if isinstance(task_list, TaskBase):
+        task_list = [task_list]
+    task_set = set()
+    task_queue = deque()
+    for task in task_list:
+        for up_or_downtask in getattr(task, up_down):
+            if up_or_downtask not in task_set:
+                task_set.add(up_or_downtask)
+                task_queue.append(up_or_downtask)
+        if mask_self:
+            if task not in task_set:
+                task_set.add(task)
+                task_queue.append(task)
+    
+    while task_queue:
+        cur_task = task_queue.popleft()
+        for up_or_downtask in getattr(cur_task, up_down):
+            if up_or_downtask not in task_set:
+                task_set.add(up_or_downtask)
+                task_queue.append(up_or_downtask)
+        yield cur_task
+
+def mask_upstream_task_sync(context: Context, task_list: TaskBase | list[TaskBase], mask_self: bool = False):
+    for task in __mask_common(task_list, mask_self, "upstream_tasks"):
+        context.sync_context.complete(task)
+    return context
+
+async def mask_upstream_task_async(context: Context, task_list: TaskBase | list[TaskBase], mask_self: bool = False):
+    for task in __mask_common(task_list, mask_self, "upstream_tasks"):
+        await context.async_context.complete(task)
+    return context
+
+def mask_downstream_task_sync(context: Context, task_list: TaskBase | list[TaskBase], mask_self: bool = False):
+    for task in __mask_common(task_list, mask_self, "downstream_tasks"):
+        context.sync_context.complete(task)
+    return context
+
+async def mask_downstream_task_async(context: Context, task_list: TaskBase | list[TaskBase], mask_self: bool = False):
+    for task in __mask_common(task_list, mask_self, "downstream_tasks"):
+        await context.async_context.complete(task)
+    return context
