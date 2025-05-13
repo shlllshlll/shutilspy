@@ -6,12 +6,10 @@ Author: shlll(shlll7347@gmail.com)
 Brief: Static DAG visualization service using Flask and D3.js
 """
 
-from flask import Flask, render_template, jsonify
-from .dag import DAG
-import json
-import os
 import threading
 from typing import Optional, Union
+from flask import Flask, render_template, jsonify
+from .dag import DAG
 
 app = Flask(__name__)
 _current_dag: Optional[DAG] = None

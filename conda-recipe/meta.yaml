@@ -1,6 +1,6 @@
 package:
   name: shutilspy
-  version: 0.0.5
+  version: 0.0.6
 
 source:
   path: ..
@@ -14,10 +14,10 @@ requirements:
     - python
     - setuptools
     - pip
-    - janus
   run:
     - python
     - janus
+    - flask
 
 about:
   license: MIT
