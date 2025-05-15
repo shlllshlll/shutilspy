@@ -89,6 +89,7 @@
         <button id="zoom-out">-</button>
         <span class="zoom-level">100%</span>
         <button id="zoom-in">+</button>
+        <button id="export-svg" title="Export SVG">↓</button>
     </div>
     <script>
         const container = document.getElementById('graph');
@@ -124,6 +125,93 @@
         document.getElementById('zoom-out').addEventListener('click', () => {
             updateZoom(currentScale - 0.1);
         });
+
+        // SVG Export functionality
+        document.getElementById('export-svg').addEventListener('click', exportSVG);
+
+        function exportSVG() {
+            // Create an SVG element
+            const svgNS = "http://www.w3.org/2000/svg";
+            const svg = document.createElementNS(svgNS, "svg");
+            
+            // Get the bounding box of all nodes
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            nodes.forEach(node => {
+                minX = Math.min(minX, node.x - 22);
+                minY = Math.min(minY, node.y - 22);
+                maxX = Math.max(maxX, node.x + 22);
+                maxY = Math.max(maxY, node.y + 22);
+            });
+            
+            // Add some padding
+            minX -= 20;
+            minY -= 20;
+            maxX += 20;
+            maxY += 20;
+            
+            const width = maxX - minX;
+            const height = maxY - minY;
+            
+            // Set SVG attributes
+            svg.setAttribute("width", width);
+            svg.setAttribute("height", height);
+            svg.setAttribute("viewBox", `${minX} ${minY} ${width} ${height}`);
+            
+            // Add links to SVG
+            links.forEach(link => {
+                const sourceNode = nodes.find(n => n.id === link.source);
+                const targetNode = nodes.find(n => n.id === link.target);
+                if (!sourceNode || !targetNode) return;
+                
+                const line = document.createElementNS(svgNS, "line");
+                line.setAttribute("x1", sourceNode.x);
+                line.setAttribute("y1", sourceNode.y);
+                line.setAttribute("x2", targetNode.x);
+                line.setAttribute("y2", targetNode.y);
+                line.setAttribute("stroke", "#999");
+                line.setAttribute("stroke-width", "2");
+                svg.appendChild(line);
+            });
+            
+            // Add nodes to SVG
+            nodes.forEach(node => {
+                const circle = document.createElementNS(svgNS, "circle");
+                circle.setAttribute("cx", node.x);
+                circle.setAttribute("cy", node.y);
+                circle.setAttribute("r", "20");
+                circle.setAttribute("fill", node.type === 'InTask' || node.type === 'OutTask' ? "#ff7875" : "#69c0ff");
+                circle.setAttribute("stroke", "#fff");
+                circle.setAttribute("stroke-width", "2");
+                svg.appendChild(circle);
+                
+                const text = document.createElementNS(svgNS, "text");
+                text.setAttribute("x", node.x);
+                text.setAttribute("y", node.y);
+                text.setAttribute("text-anchor", "middle");
+                text.setAttribute("dominant-baseline", "middle");
+                text.setAttribute("font-family", "Arial, sans-serif");
+                text.setAttribute("font-size", "12px");
+                text.setAttribute("font-weight", "500");
+                text.setAttribute("fill", "#333");
+                text.textContent = node.id;
+                svg.appendChild(text);
+            });
+            
+            // Convert SVG to string
+            const serializer = new XMLSerializer();
+            const svgString = serializer.serializeToString(svg);
+            
+            // Create a Blob and download link
+            const blob = new Blob([svgString], {type: "image/svg+xml"});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "dag_graph.svg";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
 
         // Mouse wheel zoom
         container.addEventListener('wheel', (e) => {

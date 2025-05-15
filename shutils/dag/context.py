@@ -94,10 +94,11 @@ class SyncContext(SyncDataWhiteBoard, SyncTaskState):
             for child in self.__context._child_context_list:
                 child.sync_context.destory()
 
-    def create(self, copy_data: bool = False, deep_copy: bool = False, name: str = ""):
+    def create(self, copy_data: bool = False, deep_copy: bool = False, name: str = "", skip_complete: bool = False):
         new_context = Context(self.__context._runtime, name=name)
         if copy_data:
             self.copy(new_context, deep_copy)
+        new_context._skip_complete = skip_complete
         return new_context
     
     def child_context_num(self) -> int:
@@ -153,10 +154,11 @@ class AsyncContext(AsyncDataWhiteBoard, AsyncTaskState):
             for child in self.__context._child_context_list:
                 await child.async_context.destory()
 
-    async def create(self, copy_data: bool = False, deep_copy: bool = False, name: str = ""):
+    async def create(self, copy_data: bool = False, deep_copy: bool = False, name: str = "", skip_complete: bool = False):
         new_context = Context(self.__context._runtime, name=name)
         if copy_data:
             await self.copy(new_context, deep_copy)
+        new_context._skip_complete = skip_complete
         return new_context
     
     async def child_context_num(self) -> int:

@@ -7,7 +7,7 @@ Modified By: shlll(shlll7347@gmail.com)
 Brief:
 """
 
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 import copy
 from typing import Any, Callable, TypeVar
 from dataclasses import dataclass, field
@@ -63,10 +63,11 @@ class SyncDataWhiteBoard:
     def __len__(self):
         with self.__data_white_board._sync_lock.read():
             return len(self.__data_white_board._data)
-
+        
+    @contextmanager
     def __iter__(self):
         with self.__data_white_board._sync_lock.read():
-            return iter(self.__data_white_board._data)
+            yield from iter(self.__data_white_board._data)
 
     def __bool__(self):
         with self.__data_white_board._sync_lock.read():
@@ -80,9 +81,20 @@ class SyncDataWhiteBoard:
         with self.__data_white_board._sync_lock.write():
             self.__data_white_board._data.update(kwargs)
 
+    @contextmanager
     def keys(self):
         with self.__data_white_board._sync_lock.read():
-            return self.__data_white_board._data.keys()
+            yield from self.__data_white_board._data.keys()
+    
+    @contextmanager
+    def values(self):
+        with self.__data_white_board._sync_lock.read():
+            yield from self.__data_white_board._data.values()
+    
+    @contextmanager
+    def items(self):
+        with self.__data_white_board._sync_lock.read():
+            yield from self.__data_white_board._data.items()
 
     def get(self, key, default=None):
         with self.__data_white_board._sync_lock.read():
@@ -145,6 +157,12 @@ class AsyncDataWhiteBoard:
 
     def keys(self):
         return self.read_wrapper(self.__data_white_board.sync_white_board.keys)
+    
+    def values(self):
+        return self.read_wrapper(self.__data_white_board.sync_white_board.values)
+
+    def items(self):
+        return self.read_wrapper(self.__data_white_board.sync_white_board.items)
 
     def get(self, key, default=None):
         return self.read_wrapper(self.__data_white_board.sync_white_board.get, key, default)

@@ -39,6 +39,7 @@ class TaskStateMixin:
         self._destory: bool = False
 
         self._error_info: ErrorInfo = ErrorInfo()
+        self._skip_complete: bool = False
 
     def __repr__(self):
         return f"TaskState(destory={self._destory}, error_info={self._error_info})"
@@ -73,6 +74,9 @@ class TaskStateMixin:
         return AsyncTaskState(self)
 
     def _complete(self, task: "TaskBase"):
+        if self._skip_complete:
+            self._skip_complete = False
+            return
         if task not in self._completed_tasks:
             self._available_tasks.discard(task)
             self._completed_tasks.add(task)
