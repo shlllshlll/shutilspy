@@ -13,4 +13,4 @@ description = "common python utils"
 dependencies = ["janus", "flask"]
 
 [tool.setuptools]
-packages = ["shutils"]
+packages = ["shutils", "shutils.dag"]

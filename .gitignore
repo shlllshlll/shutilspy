@@ -1,5 +1,5 @@
 /dist
-/*.egg-info
+*.egg-info/
 /data
 /build
 log/
