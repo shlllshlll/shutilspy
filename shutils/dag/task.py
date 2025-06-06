@@ -11,16 +11,19 @@ import asyncio
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 import threading
+import logging
 import uuid
 from inspect import isgenerator, isasyncgen
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Generator, Coroutine, AsyncGenerator, Protocol
+from typing import Any, Callable, Generator, Coroutine, AsyncGenerator, Iterable, Protocol, TYPE_CHECKING
 import queue
 from .context import Context, StopContext, LoopContext, OutputContext, RateLimitContext
 from .runtime import Runtime
-from .context_queue import SyncContextQueue, AsyncContextQueue
 from ..rate_limiter import RateLimiter
+if TYPE_CHECKING:
+    from .dag import DAG
 
+logger = logging.getLogger(__name__)
 
 class ShutdownCallableProtocol(Protocol):
     def __call__(self, context: Context) -> list[Context] | Context | None: ...
@@ -34,6 +37,7 @@ class AsyncShutdownCallableProtocol(Protocol):
 class Environment:
     runtime: Runtime
     process_pool: ProcessPoolExecutor | None
+    dag: "DAG"
 
 
 @dataclass
@@ -211,7 +215,6 @@ class SyncGeneratorTask(SyncTask, ShutdownTask):
         except GeneratorExit:
             pass
 
-
 class SyncImmediateTask(SyncTask):
     def __init__(
         self,
@@ -241,7 +244,7 @@ class SyncImmediateShutdownTask(SyncImmediateTask, ShutdownTask):
         name: str = ""
     ):
         super().__init__(shutdown_callable, config, name)
-    
+
     def shutdown(self):
         self._func.shutdown()
 
@@ -403,6 +406,51 @@ class AsyncImmediateTask(AsyncTask):
     def __repr__(self):
         return f"AsyncImmediateTask(func={self._func}, {TaskBase.__repr__(self)})"
 
+class AsyncRouteTask(AsyncTask):
+    def __init__(
+        self,
+        func: Callable[[Context], Coroutine[Any, Any, str | TaskBase | list[str | TaskBase]]],
+        config: TaskConfig = TaskConfig(),
+        name: str = ""
+    ):
+        super().__init__(None, config, name)
+        self._func = func
+        self._mask_task_cache: dict[tuple[TaskBase, ...], set[TaskBase]] = {}
+
+    async def call(self, context: Context, env: Environment) -> list[Context]:
+        route_tasks = await self._func(context)
+        if not isinstance(route_tasks, list):
+            route_tasks = [route_tasks]
+
+        real_route_tasks: list[TaskBase] = []
+        for task_name in route_tasks:
+            if type(task_name) is str:
+                task = env.dag.tasks.get(task_name, None)
+                if not task:
+                    logger.error(f"task {task} not found in dag tasks")
+                    await context.async_context.destory()
+                    return []
+            else:
+                task = task_name
+            if task not in self.downstream_tasks:
+                logger.error(f"task {task} not found in downstream tasks")
+                await context.async_context.destory()
+                return []
+
+            real_route_tasks.append(task)
+        route_task_set = set(real_route_tasks)
+        route_task_tuple = tuple(real_route_tasks)
+        if route_task_tuple in self._mask_task_cache:
+            mask_task_set = self._mask_task_cache[route_task_tuple]
+        else:
+            route_downstream_tasks = env.dag._get_all_downstream_tasks(route_task_set, True)
+            noroute_downstream_tasks = env.dag._get_all_downstream_tasks(self.downstream_tasks - route_task_set, True)
+            mask_task_set = noroute_downstream_tasks - route_downstream_tasks
+
+        for task in mask_task_set:
+            await context.async_context.complete(task)
+
+        return [context]
 
 class AsyncImmediateShutdownTask(AsyncImmediateTask, AShutdownTask):
     def __init__(
@@ -412,7 +460,7 @@ class AsyncImmediateShutdownTask(AsyncImmediateTask, AShutdownTask):
         name: str = ""
     ):
         super().__init__(shutdown_callable, config, name)
-    
+
     async def shutdown(self):
         await self._func.shutdown()
 
@@ -443,7 +491,7 @@ class InTask(SyncTask, ForgroundTask):
 class OutTask(AsyncTask):
     def __init__(self, name: str = "#OutTask"):
         super().__init__(None, name=name)
-        
+
     async def call(self, context: Context, env: Environment) -> list[Context]:
         if isinstance(context, OutputContext):
             return [context]

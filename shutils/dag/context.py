@@ -32,7 +32,6 @@ class Context(DataWhiteBoardMixin, TaskStateMixin):
         DataWhiteBoardMixin.__init__(self)
         TaskStateMixin.__init__(self)
         self.id = name if name else str(uuid.uuid4())
-        self.__complete_tasks: set["TaskBase"] = set()
         self.parent_rwlock = RWLock()
         self.parent_arwlock = AsyncRWLock()
         self._parent_context: Context | None = parent
@@ -53,7 +52,7 @@ class Context(DataWhiteBoardMixin, TaskStateMixin):
 
     def __repr__(self):
         if debug_mode:
-            return f"{self.__class__.__name__}(data={DataWhiteBoardMixin.__repr__(self)}, state={TaskStateMixin.__repr__(self)}, parent={self._parent_context}, child_context_num={self._child_context_num}, complete_tasks={self.__complete_tasks}, available_tasks={self.available_tasks})"
+            return f"{self.__class__.__name__}(data={DataWhiteBoardMixin.__repr__(self)}, state={TaskStateMixin.__repr__(self)}, parent={self._parent_context}, child_context_num={self._child_context_num}, complete_tasks={self._completed_tasks}, available_tasks={self.available_tasks})"
         else:
             return f"{self.__class__.__name__}(id={self.id})"
 
@@ -100,14 +99,14 @@ class SyncContext(SyncDataWhiteBoard, SyncTaskState):
             self.copy(new_context, deep_copy)
         new_context._skip_complete = skip_complete
         return new_context
-    
+
     def child_context_num(self) -> int:
         """
         Get the number of child contexts.
         """
         with self.__context.parent_rwlock.read():
             return self.__context._child_context_num
-    
+
     def iter_child_context(self):
         with self.__context.parent_rwlock.read():
             for child in self.__context._child_context_list:
@@ -160,7 +159,7 @@ class AsyncContext(AsyncDataWhiteBoard, AsyncTaskState):
             await self.copy(new_context, deep_copy)
         new_context._skip_complete = skip_complete
         return new_context
-    
+
     async def child_context_num(self) -> int:
         async with self.__context.parent_arwlock.read():
             with self.__context.parent_rwlock.read():
@@ -171,12 +170,12 @@ class AsyncContext(AsyncDataWhiteBoard, AsyncTaskState):
             with self.__context.parent_rwlock.read():
                 for child in self.__context._child_context_list:
                     yield child
-    
+
     async def parent_context(self):
         async with self.__context.parent_arwlock.read():
             with self.__context.parent_rwlock.read():
                 return self.__context._parent_context
-            
+
     @overload
     async def create_child(self, num: int = 0, name: str | None = None) -> Context: ...
 
@@ -204,7 +203,7 @@ class AsyncContext(AsyncDataWhiteBoard, AsyncTaskState):
                     self.__context._child_context_list.append(sub_context)
                     self.__context._child_context_num += 1
             context.append(sub_context)
-        
+
         if not return_context:
             return context
         else:

@@ -26,6 +26,7 @@ from .task import (
     AsyncGeneratorTask,
     AsyncLoopTask,
     AsyncImmediateTask,
+    AsyncRouteTask,
     AsyncImmediateShutdownTask,
     ForSyncGeneratorTask,
     ForSyncImmediateTask,

@@ -40,6 +40,8 @@ class ExecutorConfig:
     context_queue_timeout: float | None = 1
     thread_pool_worker_num: int | None = 0
     process_pool_worker_num: int | None = 0
+    enable_context_gc: bool = True
+    enbale_context_bypass: bool = True
 
 
 class Executor:
@@ -80,7 +82,7 @@ class Executor:
             await self.runtime.async_queue.put(context)
         logger.info(f"[Executor.run]: put input context to async queue done")
 
-        env = Environment(self.runtime, self.__process_pool)
+        env = Environment(self.runtime, self.__process_pool, self.dag)
         worker_tasks = [asyncio.create_task(self.__worker_loop(idx, env)) for idx in range(self.__config.worker_num)]
         output = await asyncio.gather(*worker_tasks)
         output_context = []
@@ -94,7 +96,9 @@ class Executor:
                 await task.shutdown()
         return output_context
 
-    async def __run_task(self, idx: int, sub_idx: int, task: TaskBase, in_context: Context, env: Environment) -> list[Context]:
+    async def __run_task(
+        self, idx: int, sub_idx: int, task: TaskBase, in_context: Context, env: Environment
+    ) -> list[Context]:
         if task in in_context.awake_time:
             if in_context.awake_time[task] > time.time():
                 logger.info(f"{in_context} cannot awake now")
@@ -134,8 +138,7 @@ class Executor:
                         in_context._awake_interval(interval, task)
                     await self.runtime.async_queue.put(in_context)
                     return []
-            traceback.print_exc()
-            logger.error(f"[Worker{idx}-{sub_idx}]: {in_context} running {task} failed, error: {e}")
+            logger.error(f"[Worker{idx}-{sub_idx}]: {in_context} running {task} failed, error: {type(e).__name__}: {e}")
             in_context.error_info = ErrorInfo(has_error=True, exception=e, error_node=task.id)
             await in_context.async_context.destory()
 
@@ -144,6 +147,7 @@ class Executor:
                 await out_context.async_task_state.complete(task)
             if isinstance(out_context, RateLimitContext):
                 context_list[idx] = out_context.context
+
         return context_list
 
     @staticmethod
@@ -170,7 +174,9 @@ class Executor:
                         await in_context.async_context.destory()
                         continue
 
-                tasks = [self.__run_task(idx, sub_idx, task, in_context, env) for sub_idx, task in enumerate(avaliable_tasks)]
+                tasks = [
+                    self.__run_task(idx, sub_idx, task, in_context, env) for sub_idx, task in enumerate(avaliable_tasks)
+                ]
                 if self.__config.sub_worker_num > 0:
                     semaphore = asyncio.Semaphore(self.__config.sub_worker_num)
                     tasks = [self.__async_limit(semaphore, task) for task in tasks]
@@ -179,7 +185,7 @@ class Executor:
                 if len(context_list_list) > 1:
                     # need deduplicate
                     context_list = list(set(context_list))
-                await self.__context_gc(in_context, context_list)
+                await self.__context_postprocess(in_context, context_list, avaliable_tasks)
                 for out_context in context_list:
                     if isinstance(out_context, OutputContext):
                         output_context.append(out_context)
@@ -194,25 +200,54 @@ class Executor:
                 logger.info(f"[Worker{idx}]: context queue get timeout, skip")
                 continue
         return output_context
-    
-    async def __context_gc(self, in_context: Iterable[Context] | Context, output_context: Iterable[Context]):
+
+    async def __context_postprocess(
+        self, in_context: Iterable[Context] | Context, output_context: Iterable[Context], running_tasks: list[TaskBase]
+    ):
+        if not self.__config.enable_context_gc and not self.__config.enbale_context_bypass:
+            return
+
         if isinstance(in_context, Context):
             in_context = [in_context]
-        in_context_set = set(in_context)
-        out_context_set = set(output_context)
-        inner_context_set = in_context_set & out_context_set
-        in_context_set = in_context_set - inner_context_set
+        in_context_set = set([context for context in in_context if not context.is_destory()])
+        out_context_set = set([context for context in output_context if not context.is_destory()])
 
-        for context in output_context:
-            parent_context = await context.async_context.parent_context()
-            if parent_context is not None:
-                out_context_set.add(parent_context)
-            async for child_context in context.async_context.iter_child_context():
-                out_context_set.add(child_context)
-            
-        in_context_set = in_context_set - out_context_set
-        for context in in_context_set:
-            logger.info(f"[ContextGC]: {context} is not in output context, destory")
-            await context.async_context.destory()
-            
+        if self.__config.enable_context_gc and in_context_set:
+            # collect all output contexts
+            for context in output_context:
+                # collect parent contexts
+                parent_context = await context.async_context.parent_context()
+                if parent_context is not None and not parent_context.is_destory():
+                    out_context_set.add(parent_context)
+                # collect child contexts
+                async for child_context in context.async_context.iter_child_context():
+                    if not child_context.is_destory():
+                        out_context_set.add(child_context)
 
+            # contexts that are in input context but not in output context should be destoryed
+            destory_context_set = in_context_set - out_context_set
+            for context in destory_context_set:
+                logger.info(f"[ContextGC]: {context} is not in output context, destory")
+                await context.async_context.destory()
+
+        if self.__config.enbale_context_bypass and out_context_set:
+            # collect all input contexts
+            for context in in_context:
+                # collect parent contexts
+                parent_context = await context.async_context.parent_context()
+                if parent_context is not None and not parent_context.is_destory():
+                    in_context_set.add(parent_context)
+                # collect child contexts
+                async for child_context in context.async_context.iter_child_context():
+                    if not child_context.is_destory():
+                        in_context_set.add(child_context)
+            # contexts that are in output context but not in input context should mask it's bypass tasks
+            new_context_set = out_context_set - in_context_set
+            new_context_set = {item for item in new_context_set if not isinstance(item, LoopContext)}
+            running_task_set = set(running_tasks)
+            for context in new_context_set:
+                current_running_tasks = context._completed_tasks & running_task_set
+                bypass_tasks = self.dag._get_bypass_tasks(current_running_tasks)
+                logger.info(f"[ContextBypass]: {context} is not in input context, mask bypass tasks: {bypass_tasks}")
+                for bypass_task in bypass_tasks:
+                    await context.async_task_state.complete(bypass_task)
