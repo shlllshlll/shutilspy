@@ -12,7 +12,6 @@ from dataclasses import dataclass
 import logging
 from typing import Coroutine, Iterable
 import asyncio
-import traceback
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 from .runtime import Runtime
 from .dag import DAG
@@ -101,15 +100,15 @@ class Executor:
     ) -> list[Context]:
         if task in in_context.awake_time:
             if in_context.awake_time[task] > time.time():
-                logger.info(f"{in_context} cannot awake now")
+                logger.debug(f"{in_context} cannot awake now")
                 await self.runtime.async_queue.put(in_context)
                 return []
-            logger.info(f"{in_context} can awake now")
+            logger.debug(f"{in_context} can awake now")
             in_context.awake_time.pop(task)
 
         context_list = []
         try:
-            logger.info(f"[Worker{idx}-{sub_idx}]: {in_context} begin running {task}")
+            logger.debug(f"[Worker{idx}-{sub_idx}]: {in_context} begin running {task}")
             if isinstance(task, ForgroundTask):
                 if isinstance(task, SyncTask):
                     context_list = task(in_context, env)
@@ -126,7 +125,7 @@ class Executor:
                         context_list = await asyncio.to_thread(task, in_context, env)
                 else:
                     raise ValueError(f"[Worker{idx}-{sub_idx}]: Unknown task type: {type(task)}")
-            logger.info(f"[Worker{idx}-{sub_idx}]: {in_context} running {task} done")
+            logger.debug(f"[Worker{idx}-{sub_idx}]: {in_context} running {task} done")
         except Exception as e:
             if task.config.retry_times > 0:
                 if await in_context.async_task_state.retry(task) <= task.config.retry_times:
@@ -160,7 +159,7 @@ class Executor:
         while True:
             try:
                 async with self.runtime.check_get_context(self.__config.context_queue_timeout) as in_context:
-                    logger.info(f"[Worker{idx}]: get context[{in_context}] from async queue done")
+                    logger.debug(f"[Worker{idx}]: get context[{in_context}] from async queue done")
                     if isinstance(in_context, StopContext):
                         logger.info(f"[Worker{idx}]: get StopContext, break")
                         break
@@ -197,7 +196,7 @@ class Executor:
                         else:
                             await self.runtime.async_queue.put(out_context, ContextPriority.FIFO_HIGH)
             except asyncio.TimeoutError:
-                logger.info(f"[Worker{idx}]: context queue get timeout, skip")
+                logger.debug(f"[Worker{idx}]: context queue get timeout, skip")
                 continue
         return output_context
 
@@ -227,7 +226,7 @@ class Executor:
             # contexts that are in input context but not in output context should be destoryed
             destory_context_set = in_context_set - out_context_set
             for context in destory_context_set:
-                logger.info(f"[ContextGC]: {context} is not in output context, destory")
+                logger.debug(f"[ContextGC]: {context} is not in output context, destory")
                 await context.async_context.destory()
 
         if self.__config.enbale_context_bypass and out_context_set:
@@ -248,6 +247,6 @@ class Executor:
             for context in new_context_set:
                 current_running_tasks = context._completed_tasks & running_task_set
                 bypass_tasks = self.dag._get_bypass_tasks(current_running_tasks)
-                logger.info(f"[ContextBypass]: {context} is not in input context, mask bypass tasks: {bypass_tasks}")
+                logger.debug(f"[ContextBypass]: {context} is not in input context, mask bypass tasks: {bypass_tasks}")
                 for bypass_task in bypass_tasks:
                     await context.async_task_state.complete(bypass_task)
