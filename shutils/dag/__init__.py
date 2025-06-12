@@ -32,4 +32,3 @@ from .task import (
     ForSyncImmediateTask,
     ForSyncLoopTask,
 )
-from .visualizer import start_visualizer

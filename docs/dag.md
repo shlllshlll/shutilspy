@@ -144,8 +144,23 @@ context.sync_context.destory()
     await context.async_context.set("key", new_data)
     # 处理完成返回当前context
     return context
-  
+
   task = dag.AsyncImmediateTask(process_data)
+  ```
+
+- `AsyncRouteTask`: 路由任务，根据输入context的某个字段值，决定将context发送到哪些下游任务处理，默认情况下，路由任务会将context发送到所有下游任务处理。
+
+  ```python
+  async def route_task(context) -> str | TaskBase | list[str | TaskBase]:
+    data = await context.async_context.get("key", None)
+    if data == "route_to_task1":
+        return "task1"  # 发送到task1处理，可以指定下游task的id名，也可以直接返回下游task的实例；可以返回一个list，表示发送到多个下游任务
+    elif data == "route_to_task2":
+        return "task2" # 发送到task2处理
+    else:
+        return ["task1", "task2"]  # 发送到task1和task2处理
+
+  task = dag.AsyncRouteTask(route_task)
   ```
 
 - `AsyncGeneratorTask`: 异步生成器任务，即通过yield实现context的传入传出，用于需要在一个循环中处理context的场景
@@ -162,7 +177,7 @@ context.sync_context.destory()
         await cur_context.async_context.set("key", result)
         # 传出当前context并接收下一个传入的context
         next_context = yield cur_context
-  
+
   task = dag.AsyncGeneratorTask(process_data_generator)
   ```
 
@@ -178,7 +193,7 @@ context.sync_context.destory()
                 await new_context.async_context.set("line", line)
                 # 传出当前context并接收下一个传入的context
                 yield new_context
-  
+
   task = dag.AsyncLoopTask(loop_processor)
   ```
 
@@ -196,7 +211,7 @@ context.sync_context.destory()
           await f.write(data)
           # 处理完成，通过asyncio.Future将context返回dag框架
           future.set_result(context)
-  
+
   task = dag.AsyncLongrunTask(long_running_task)
   ```
 
@@ -207,7 +222,7 @@ context.sync_context.destory()
     async def __call__(self, context):
         # do nothing
         return context
-    
+
     async def shutdown(self):
         await do_something()
 
@@ -225,7 +240,7 @@ context.sync_context.destory()
       new_data = do_something(data)
       context["key"] = new_data
       return context
-  
+
   task = dag.SyncImmediateTask(process_data)
   ```
 
@@ -236,7 +251,7 @@ context.sync_context.destory()
     def __call__(self, context):
         # do nothing
         return context
-    
+
     def shutdown(self):
         do_something()
 
@@ -296,7 +311,7 @@ from shutils.dag import ExecutorConfig
 config = ExecutorConfig(
     # 执行器数量，决定了Executor能够同时处理Context的数量
     worker_num=1,
-    # 子执行器数量，决定了一个Context能够同时执行的Task的数量
+    # 子执行器数量，决定了一个Context能够同时执行的Task的数量；设置为小于1的值时，表示不限制子执行器数量
     sub_worker_num=1
 )
 ```

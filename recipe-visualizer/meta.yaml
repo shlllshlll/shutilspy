@@ -1,0 +1,24 @@
+package:
+  name: shutilspy-visualizer
+  version: 0.0.9
+
+source:
+  path: ..
+
+build:
+  noarch: python
+  script: "{{ PYTHON }} -m pip install . --no-deps -vv"
+
+requirements:
+  host:
+    - python
+    - setuptools
+    - pip
+  run:
+    - python
+    - janus
+    - flask
+
+about:
+  license: MIT
+  summary: 'common python utils'

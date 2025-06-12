@@ -60,10 +60,16 @@ jobs:
       - name: Build wheel
         run: |
           python -m build -nw
-      - name: Build conda package
+      - name: Build conda package shutilspy
         run: |
-          OUT_FILE=$(conda build -b --output -c conda-forge conda-recipe)
-          conda build --no-test --no-anaconda-upload -c conda-forge conda-recipe
+          OUT_FILE=$(conda build -b --output -c conda-forge recipe)
+          conda build --no-test --no-anaconda-upload -c conda-forge recipe
+          ls -l /usr/share/miniconda/conda-bld/noarch
+          cp $OUT_FILE dist/
+      - name: Build conda package shutilspy-visualizer
+        run: |
+          OUT_FILE=$(conda build -b --output -c conda-forge recipe-visualizer)
+          conda build --no-test --no-anaconda-upload -c conda-forge recipe-visualizer
           ls -l /usr/share/miniconda/conda-bld/noarch
           cp $OUT_FILE dist/
       - name: Create Release
