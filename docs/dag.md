@@ -229,6 +229,7 @@ context.sync_context.destory()
   async_shutdown_task = dag.AsyncImmediateShutdownTask(FileUpload())
   ```
 
+
 #### 同步任务
 
 - `SyncImmediateTask`: 立即执行的同步任务
@@ -257,6 +258,7 @@ context.sync_context.destory()
 
   sync_shutdown_task = dag.SyncImmediateShutdownTask(FileUpload())
   ```
+
 
 #### 任务配置
 
@@ -332,3 +334,9 @@ dag_graph.build()
 # 2. start dag server
 dag_graph.visualize(dag_graph, host="0.0.0.0", port=8088)
 ```
+
+# TODO
+
+- [ ] 去除Executor中两级任务执行的设计，仅使用一级，简化执行逻辑
+- [ ] 统一Context中各种同步、异步借口设计，取消需要先显示获取async_context和sync_context以及white_board的设计，统一通过context.xxx的方式访问，根据执行环境自动切换同步异步方式
+- [ ] 调试和可视化功能增强，通过网页端可以查看context、task的任务执行情况，可以在执行task的时候，同步启动一个web服务，实时查看dag的执行情况
