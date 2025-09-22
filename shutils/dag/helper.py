@@ -84,7 +84,6 @@ def get_params(params: dict) -> dict[str, Any]]:
 def build_dag(dag_conf: dict[str, Any]) -> Executor:
     worker_num = dag_conf.get("worker_num", 1)
     dag = DAG()
-    runtime = Runtime()
     task_dict: dict[str, tuple[TaskBase, dict[str, Any]]] = {}
     for task_conf in dag_conf["tasks"]:
         task_type = task_conf.get["type"]
@@ -95,8 +94,9 @@ def build_dag(dag_conf: dict[str, Any]) -> Executor:
         func = get_callable_func(task_conf["func"])
         task_func = partial(func, **get_params(task_conf.get("params", {})))
         task_params = task_conf.get("task_params", {})
-        task_instance = task_cls(task_config, task_func, runtime, task_config, **task_params)
-        task_dict[task_conf["name"]] = (task_instance, task_conf)
+        task_name = task_conf["name"]
+        task_instance = task_cls(task_func, task_config, task_name, **task_params)
+        task_dict[task_name] = (task_instance, task_conf)
 
     for task_instance, task_conf in task_dict.values():
         dependencies = []

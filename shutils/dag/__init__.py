@@ -8,10 +8,10 @@ Brief:
 """
 
 from . import context, dag, executor, runtime, task
-from .context import Context, OutputContext, StopContext
+from .context import Context, AsyncContext, SyncContext, OutputContext, StopContext
 from .context_queue import SyncContextQueue, AsyncContextQueue
 from .dag import DAG
-from .executor import Executor, ExecutorConfig
+from .executor import Executor, ExecutorConfig, worker_local
 from .runtime import Runtime
 from .task import (
     TaskConfig,
@@ -32,3 +32,4 @@ from .task import (
     ForSyncImmediateTask,
     ForSyncLoopTask,
 )
+from .utils import ResourcePool

@@ -8,7 +8,7 @@ Brief:
 """
 import time
 import uuid
-from typing import TYPE_CHECKING, overload
+from typing import TYPE_CHECKING, Generator, overload, AsyncGenerator
 from ..rwlock import RWLock, AsyncRWLock
 from .task_state import TaskStateMixin, SyncTaskState, AsyncTaskState
 from .data_white_board import (
@@ -56,15 +56,14 @@ class Context(DataWhiteBoardMixin, TaskStateMixin):
         else:
             return f"{self.__class__.__name__}(id={self.id})"
 
-
     @property
-    def sync_context(self):
+    def sync_context(self) -> "SyncContext":
         if self._sync_context is None:
             self._sync_context = SyncContext(self)
         return self._sync_context
 
     @property
-    def async_context(self):
+    def async_context(self) -> "AsyncContext":
         if self._async_context is None:
             self._async_context = AsyncContext(self)
         return self._async_context
@@ -78,6 +77,14 @@ class SyncContext(SyncDataWhiteBoard, SyncTaskState):
         SyncDataWhiteBoard.__init__(self, context)
         SyncTaskState.__init__(self, context)
         self.__context = context
+
+    @property
+    def context(self) -> Context:
+        return self.__context
+
+    @property
+    def async_context(self) -> "AsyncContext":
+        return self.__context.async_context
 
     def destory(self):
         if self.__context.is_destory():
@@ -93,12 +100,14 @@ class SyncContext(SyncDataWhiteBoard, SyncTaskState):
             for child in self.__context._child_context_list:
                 child.sync_context.destory()
 
-    def create(self, copy_data: bool = False, deep_copy: bool = False, name: str = "", skip_complete: bool = False):
+    def create(
+        self, copy_data: bool = False, deep_copy: bool = False, name: str = "", skip_complete: bool = False
+    ) -> "SyncContext":
         new_context = Context(self.__context._runtime, name=name)
         if copy_data:
             self.copy(new_context, deep_copy)
         new_context._skip_complete = skip_complete
-        return new_context
+        return new_context.sync_context
 
     def child_context_num(self) -> int:
         """
@@ -119,14 +128,14 @@ class SyncContext(SyncDataWhiteBoard, SyncTaskState):
         with self.__context.parent_rwlock.read():
             return self.__context._parent_context
 
-    def create_child(self, num: int = 0):
+    def create_child(self, num: int = 0) -> "list[SyncContext] | SyncContext":
         """
         Create a child context.
         """
         if num:
-            return [Context(self.__context._runtime, self.__context) for _ in range(num)]
+            return [Context(self.__context._runtime, self.__context).sync_context for _ in range(num)]
         else:
-            return Context(self.__context._runtime, self.__context)
+            return Context(self.__context._runtime, self.__context).sync_context
 
 
 class AsyncContext(AsyncDataWhiteBoard, AsyncTaskState):
@@ -134,6 +143,14 @@ class AsyncContext(AsyncDataWhiteBoard, AsyncTaskState):
         AsyncDataWhiteBoard.__init__(self, context)
         AsyncTaskState.__init__(self, context)
         self.__context = context
+
+    @property
+    def context(self) -> Context:
+        return self.__context
+
+    @property
+    def sync_context(self) -> "SyncContext":
+        return self.__context.sync_context
 
     async def destory(self):
         """
@@ -153,36 +170,43 @@ class AsyncContext(AsyncDataWhiteBoard, AsyncTaskState):
             for child in self.__context._child_context_list:
                 await child.async_context.destory()
 
-    async def create(self, copy_data: bool = False, deep_copy: bool = False, name: str = "", skip_complete: bool = False):
+    async def create(
+        self, copy_data: bool = False, deep_copy: bool = False, name: str = "", skip_complete: bool = False
+    ) -> "AsyncContext":
         new_context = Context(self.__context._runtime, name=name)
         if copy_data:
             await self.copy(new_context, deep_copy)
         new_context._skip_complete = skip_complete
-        return new_context
+        return new_context.async_context
 
     async def child_context_num(self) -> int:
         async with self.__context.parent_arwlock.read():
             with self.__context.parent_rwlock.read():
                 return self.__context._child_context_num
 
-    async def iter_child_context(self):
+    async def iter_child_context(self) -> AsyncGenerator["AsyncContext"]:
         async with self.__context.parent_arwlock.read():
             with self.__context.parent_rwlock.read():
                 for child in self.__context._child_context_list:
-                    yield child
+                    yield child.async_context
 
-    async def parent_context(self):
+    async def parent_context(self) -> "AsyncContext | None":
         async with self.__context.parent_arwlock.read():
             with self.__context.parent_rwlock.read():
-                return self.__context._parent_context
+                if self.__context._parent_context:
+                    return self.__context._parent_context.async_context
+                else:
+                    return None
 
     @overload
-    async def create_child(self, num: int = 0, name: str | None = None) -> Context: ...
+    async def create_child(self, num: int = 0, name: str | None = None) -> "AsyncContext": ...
 
     @overload
-    async def create_child(self, num: int, name: str | list[str] | None = None) -> list[Context]: ...
+    async def create_child(self, num: int, name: str | list[str] | None = None) -> list["AsyncContext"]: ...
 
-    async def create_child(self, num: int = 0, name: str | list[str] | None = None) -> Context | list[Context]:
+    async def create_child(
+        self, num: int = 0, name: str | list[str] | None = None
+    ) -> "AsyncContext | list[AsyncContext]":
         if self.__context._parent_context is not None:
             raise ValueError("parent context must be a root context")
         return_context = num == 0
@@ -202,21 +226,24 @@ class AsyncContext(AsyncDataWhiteBoard, AsyncTaskState):
                 with self.__context.parent_rwlock.write():
                     self.__context._child_context_list.append(sub_context)
                     self.__context._child_context_num += 1
-            context.append(sub_context)
+            context.append(sub_context.async_context)
 
         if not return_context:
             return context
         else:
             return context[0]
 
+
 class LoopContext(Context):
     def __init__(self, runtime: "Runtime | None", task: "TaskBase", name: str = "LoopContext"):
         super().__init__(runtime, name=name)
         self._add_available_task(task)
 
+
 class RateLimitContext(Context):
     def __init__(self, context: Context):
         self.context = context
+
 
 class StopContext(Context):
     def __init__(self, name: str = "StopContext"):

@@ -15,8 +15,6 @@ from ..rwlock import RWLock, AsyncRWLock
 if TYPE_CHECKING:
     from .task import TaskBase
 
-T = TypeVar("T")
-
 
 @dataclass
 class ErrorInfo:
@@ -106,11 +104,11 @@ class AsyncTaskState:
     def __init__(self, task_state: TaskStateMixin):
         self.__task_state = task_state
 
-    async def read_wrapper(self, func: Callable[..., T], *args, **kwargs):
+    async def read_wrapper[T](self, func: Callable[..., T], *args, **kwargs):
         async with self.__task_state._task_alock.read():
             return func(*args, **kwargs)
 
-    async def write_wrapper(self, func: Callable[..., T], *args, **kwargs):
+    async def write_wrapper[T](self, func: Callable[..., T], *args, **kwargs):
         async with self.__task_state._task_alock.write():
             return func(*args, **kwargs)
 

@@ -17,21 +17,25 @@ from inspect import isgenerator, isasyncgen
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Generator, Coroutine, AsyncGenerator, Iterable, Protocol, TYPE_CHECKING
 import queue
-from .context import Context, StopContext, LoopContext, OutputContext, RateLimitContext
+from .context import Context, AsyncContext, SyncContext, StopContext, LoopContext, OutputContext, RateLimitContext
 from .runtime import Runtime
 from ..rate_limiter import RateLimiter
+
 if TYPE_CHECKING:
     from .dag import DAG
 
 logger = logging.getLogger(__name__)
 
+
 class ShutdownCallableProtocol(Protocol):
-    def __call__(self, context: Context) -> list[Context] | Context | None: ...
+    def __call__(self, context: SyncContext) -> list[SyncContext] | SyncContext | None: ...
     def shutdown(self) -> None: ...
 
+
 class AsyncShutdownCallableProtocol(Protocol):
-    async def __call__(self, context: Context) -> list[Context] | Context | None: ...
+    async def __call__(self, context: AsyncContext) -> list[AsyncContext] | AsyncContext | None: ...
     async def shutdown(self) -> None: ...
+
 
 @dataclass
 class Environment:
@@ -112,28 +116,30 @@ class AShutdownTask(ABC):
 
 class SyncTask(TaskBase):
     @abstractmethod
-    def call(self, context: Context, env: Environment) -> list[Context]:
+    def call(self, sync_ctx: SyncContext, env: Environment) -> list[SyncContext]:
         pass
 
     def __call__(self, context: Context, env: Environment) -> list[Context]:
         ret = self.call_before(context)
         if ret:
             return [ret]
-        ret = self.call(context, env)
+        sync_ret = self.call(context.sync_context, env)
+        ret = [ctx.context for ctx in sync_ret]
         self.call_after(ret)
         return ret
 
 
 class AsyncTask(TaskBase):
     @abstractmethod
-    async def call(self, context: Context, env: Environment) -> list[Context]:
+    async def call(self, async_ctx: AsyncContext, env: Environment) -> list[AsyncContext]:
         pass
 
     async def __call__(self, context: Context, env: Environment) -> list[Context]:
         ret = self.call_before(context)
         if ret:
             return [ret]
-        ret = await self.call(context, env)
+        async_ret = await self.call(context.async_context, env)
+        ret = [ctx.context for ctx in async_ret]
         self.call_after(ret)
         return ret
 
@@ -141,53 +147,53 @@ class AsyncTask(TaskBase):
 class SyncProcessTask(AsyncTask):
     def __init__(
         self,
-        func: Callable[[Context], list[Context] | Context],
+        func: Callable[[SyncContext], list[SyncContext] | SyncContext],
         config: TaskConfig = TaskConfig(),
-        name: str = ""
+        name: str = "",
     ):
         super().__init__(func, config, name)
         self._func = func
 
     @staticmethod
-    def _func_wrapper(func: Callable[[Context], list[Context] | Context], data: dict):
+    def _func_wrapper(func: Callable[[SyncContext], list[SyncContext] | SyncContext], data: dict):
         input_context = Context(None)
         input_context._data = data
-        ret = func(input_context)
-        if isinstance(ret, Context):
-            return ret._data
+        ret = func(input_context.sync_context)
+        if isinstance(ret, SyncContext):
+            return ret.context._data
 
         output_data_list = []
-        for context in ret:
-            output_data_list.append(context._data)
+        for sync_ctx in ret:
+            output_data_list.append(sync_ctx.context._data)
         return output_data_list
 
-    async def call(self, context: Context, env: Environment) -> list[Context]:
+    async def call(self, async_ctx: AsyncContext, env: Environment) -> list[AsyncContext]:
         if env.process_pool is None:
             raise RuntimeError("process pool is not set")
         loop = asyncio.get_running_loop()
-        async with context.async_context.wlock():
-            ret = await loop.run_in_executor(env.process_pool, self._func_wrapper, self._func, context._data)
+        async with async_ctx.wlock():
+            ret = await loop.run_in_executor(env.process_pool, self._func_wrapper, self._func, async_ctx.context._data)
 
         if isinstance(ret, dict):
-            async with context.async_context.wlock():
-                context._data = ret
-            return [context]
+            async with async_ctx.wlock():
+                async_ctx.context._data = ret
+            return [async_ctx]
 
         output_context_list = []
         for data in ret:
-            output_context = await context.async_context.create()
-            output_context._data = data
+            output_context = await async_ctx.create()
+            output_context.context._data = data
             output_context_list.append(output_context)
-        await context.async_context.destory()
+        await async_ctx.destory()
         return output_context_list
 
 
 class SyncGeneratorTask(SyncTask, ShutdownTask):
     def __init__(
         self,
-        func: Callable[[], Generator[Context | list[Context] | None, Context, None]],
+        func: Callable[[], Generator[SyncContext | list[SyncContext] | None, SyncContext, None]],
         config: TaskConfig = TaskConfig(),
-        name: str = ""
+        name: str = "",
     ):
         super().__init__(func, config, name)
         self._generator = func()
@@ -195,12 +201,12 @@ class SyncGeneratorTask(SyncTask, ShutdownTask):
             raise ValueError("func must be a generator function")
         next(self._generator)
 
-    def call(self, context: Context, env: Environment) -> list[Context]:
+    def call(self, sync_ctx: SyncContext, env: Environment) -> list[SyncContext]:
         try:
-            ret = self._generator.send(context)
+            ret = self._generator.send(sync_ctx)
             if ret is None:
                 return []
-            if isinstance(ret, Context):
+            if isinstance(ret, SyncContext):
                 return [ret]
             return ret
         except StopIteration:
@@ -215,19 +221,20 @@ class SyncGeneratorTask(SyncTask, ShutdownTask):
         except GeneratorExit:
             pass
 
+
 class SyncImmediateTask(SyncTask):
     def __init__(
         self,
-        func: Callable[[Context], list[Context] | Context | None],
+        func: Callable[[SyncContext], list[SyncContext] | SyncContext | None],
         config: TaskConfig = TaskConfig(),
-        name: str = ""
+        name: str = "",
     ):
         super().__init__(func, config, name)
         self._func = func
 
-    def call(self, context: Context, env: Environment) -> list[Context]:
-        ret = self._func(context)
-        if isinstance(ret, Context):
+    def call(self, sync_ctx: SyncContext, env: Environment) -> list[SyncContext]:
+        ret = self._func(sync_ctx)
+        if isinstance(ret, SyncContext):
             return [ret]
         elif ret is None:
             return []
@@ -236,29 +243,26 @@ class SyncImmediateTask(SyncTask):
     def __repr__(self):
         return f"SyncImmediateTask(func={self._func}, {TaskBase.__repr__(self)})"
 
+
 class SyncImmediateShutdownTask(SyncImmediateTask, ShutdownTask):
-    def __init__(
-        self,
-        shutdown_callable: ShutdownCallableProtocol,
-        config: TaskConfig = TaskConfig(),
-        name: str = ""
-    ):
+    def __init__(self, shutdown_callable: ShutdownCallableProtocol, config: TaskConfig = TaskConfig(), name: str = ""):
         super().__init__(shutdown_callable, config, name)
 
     def shutdown(self):
         self._func.shutdown()
 
+
 class SyncLoopTask(SyncGeneratorTask):
-    def call(self, context: Context, env: Environment) -> list[Context]:
-        need_create_loop_context = isinstance(context, LoopContext) == False
-        ret = super().call(context, env)
+    def call(self, sync_ctx: SyncContext, env: Environment) -> list[SyncContext]:
+        need_create_loop_context = isinstance(sync_ctx.context, LoopContext) == False
+        ret = super().call(sync_ctx, env)
         if ret:
             if need_create_loop_context:
-                ret.append(LoopContext(context._runtime, self))
+                ret.append(LoopContext(sync_ctx.context._runtime, self).sync_context)
             else:
-                ret.append(context)
+                ret.append(sync_ctx)
         elif need_create_loop_context is False:
-            context.sync_context.destory()
+            sync_ctx.destory()
 
         return ret
 
@@ -268,24 +272,24 @@ class SyncLongrunTask(SyncTask, LongrunTask, ShutdownTask):
         self,
         func: Callable[[queue.Queue[tuple[Context, queue.Queue[list[Context] | Context | None]]]], None],
         config: TaskConfig = TaskConfig(),
-        name: str = ""
+        name: str = "",
     ):
         super().__init__(func, config, name)
         self.__input_queue = queue.Queue()
         self._func = func
         self.__thread = None
 
-    def call(self, context: Context, env: Environment) -> list[Context]:
+    def call(self, sync_ctx: SyncContext, env: Environment) -> list[SyncContext]:
         if self.__thread is None:
             self.__thread = threading.Thread(target=self._func, args=(self.__input_queue,))
             self.__thread.start()
         if not self.__thread.is_alive():
             raise RuntimeError("thread is not alive")
         future = queue.Queue()
-        self.__input_queue.put((context, future))
+        self.__input_queue.put((sync_ctx, future))
         result = future.get()
-        if isinstance(result, Context):
-            return [result]
+        if isinstance(result, SyncContext):
+            return [sync_ctx]
         elif isinstance(result, list):
             return result
         return []
@@ -295,30 +299,30 @@ class SyncLongrunTask(SyncTask, LongrunTask, ShutdownTask):
 
     def shutdown(self):
         if self.__thread and self.__thread.is_alive():
-            self.__input_queue.put((StopContext(), queue.Queue()))
+            self.__input_queue.put((StopContext().sync_context, queue.Queue()))
             self.__thread.join()
 
 
 class AsyncLongrunTask(AsyncTask, LongrunTask, AShutdownTask):
     def __init__(
         self,
-        func: Callable[[asyncio.Queue[tuple[Context, asyncio.Future]]], Coroutine[Any, Any, None]],
+        func: Callable[[asyncio.Queue[tuple[AsyncContext, asyncio.Future]]], Coroutine[Any, Any, None]],
         config: TaskConfig = TaskConfig(),
-        name: str = ""
+        name: str = "",
     ):
         super().__init__(func, config, name)
         self.__input_queue = asyncio.Queue()
         self.__task = None
         self._func = func
 
-    async def call(self, context: Context, env: Environment) -> list[Context]:
+    async def call(self, async_ctx: AsyncContext, env: Environment) -> list[AsyncContext]:
         if self.__task is None:
             self.__task = asyncio.create_task(self._func(self.__input_queue))
         future = asyncio.Future()
-        await self.__input_queue.put((context, future))
+        await self.__input_queue.put((async_ctx, future))
         result = await future
 
-        if isinstance(result, Context):
+        if isinstance(result, AsyncContext):
             return [result]
         elif isinstance(result, list):
             return result
@@ -329,7 +333,7 @@ class AsyncLongrunTask(AsyncTask, LongrunTask, AShutdownTask):
 
     async def shutdown(self):
         if self.__task:
-            await self.__input_queue.put((StopContext(), asyncio.Future()))
+            await self.__input_queue.put((StopContext().async_context, asyncio.Future()))
             await self.__task
             self.__task = None
 
@@ -337,25 +341,25 @@ class AsyncLongrunTask(AsyncTask, LongrunTask, AShutdownTask):
 class AsyncGeneratorTask(AsyncTask, AShutdownTask):
     def __init__(
         self,
-        func: Callable[[], AsyncGenerator[Context | list[Context] | None, Context]],
+        func: Callable[[], AsyncGenerator[AsyncContext | list[AsyncContext] | None, AsyncContext]],
         config: TaskConfig = TaskConfig(),
-        name: str = ""
+        name: str = "",
     ):
-        super().__init__(func,config, name)
+        super().__init__(func, config, name)
         self.__generator = func()
         if not isasyncgen(self.__generator):
             raise ValueError("func must be a async generator function")
         self.__activate_generator = False
 
-    async def call(self, context: Context, env: Environment) -> list[Context]:
+    async def call(self, async_ctx: AsyncContext, env: Environment) -> list[AsyncContext]:
         if not self.__activate_generator:
             self.__activate_generator = True
             await anext(self.__generator)
         try:
-            ret = await self.__generator.asend(context)
+            ret = await self.__generator.asend(async_ctx)
             if ret is None:
                 return []
-            if isinstance(ret, Context):
+            if isinstance(ret, AsyncContext):
                 return [ret]
             return ret
         except StopAsyncIteration:
@@ -372,32 +376,32 @@ class AsyncGeneratorTask(AsyncTask, AShutdownTask):
 
 
 class AsyncLoopTask(AsyncGeneratorTask):
-    async def call(self, context: Context, env: Environment) -> list[Context]:
-        need_create_loop_context = isinstance(context, LoopContext) == False
-        ret = await super().call(context, env)
+    async def call(self, async_ctx: AsyncContext, env: Environment) -> list[AsyncContext]:
+        need_create_loop_context = isinstance(async_ctx.context, LoopContext) == False
+        ret = await super().call(async_ctx, env)
         if ret:
             if need_create_loop_context:
-                ret.append(LoopContext(context._runtime, self))
+                ret.append(LoopContext(async_ctx.context._runtime, self).async_context)
             else:
-                ret.append(context)
+                ret.append(async_ctx)
         elif need_create_loop_context is False:
-            await context.async_context.destory()
+            await async_ctx.destory()
         return ret
 
 
 class AsyncImmediateTask(AsyncTask):
     def __init__(
         self,
-        func: Callable[[Context], Coroutine[Any, Any, list[Context] | Context | None]],
+        func: Callable[[AsyncContext], Coroutine[Any, Any, list[AsyncContext] | AsyncContext | None]],
         config: TaskConfig = TaskConfig(),
-        name: str = ""
+        name: str = "",
     ):
         super().__init__(func, config, name)
         self._func = func
 
-    async def call(self, context: Context, env: Environment) -> list[Context]:
-        ret = await self._func(context)
-        if isinstance(ret, Context):
+    async def call(self, async_ctx: AsyncContext, env: Environment) -> list[AsyncContext]:
+        ret = await self._func(async_ctx)
+        if isinstance(ret, AsyncContext):
             return [ret]
         elif ret is None:
             return []
@@ -406,19 +410,20 @@ class AsyncImmediateTask(AsyncTask):
     def __repr__(self):
         return f"AsyncImmediateTask(func={self._func}, {TaskBase.__repr__(self)})"
 
+
 class AsyncRouteTask(AsyncTask):
     def __init__(
         self,
-        func: Callable[[Context], Coroutine[Any, Any, str | TaskBase | list[str | TaskBase]]],
+        func: Callable[[AsyncContext], Coroutine[Any, Any, str | TaskBase | list[str | TaskBase]]],
         config: TaskConfig = TaskConfig(),
-        name: str = ""
+        name: str = "",
     ):
         super().__init__(None, config, name)
         self._func = func
         self._mask_task_cache: dict[tuple[TaskBase, ...], set[TaskBase]] = {}
 
-    async def call(self, context: Context, env: Environment) -> list[Context]:
-        route_tasks = await self._func(context)
+    async def call(self, async_ctx: AsyncContext, env: Environment) -> list[AsyncContext]:
+        route_tasks = await self._func(async_ctx)
         if not isinstance(route_tasks, list):
             route_tasks = [route_tasks]
 
@@ -428,13 +433,13 @@ class AsyncRouteTask(AsyncTask):
                 task = env.dag.tasks.get(task_name, None)
                 if not task:
                     logger.error(f"task {task} not found in dag tasks")
-                    await context.async_context.destory()
+                    await async_ctx.destory()
                     return []
             else:
                 task = task_name
             if task not in self.downstream_tasks:
                 logger.error(f"task {task} not found in downstream tasks")
-                await context.async_context.destory()
+                await async_ctx.destory()
                 return []
 
             real_route_tasks.append(task)
@@ -448,21 +453,20 @@ class AsyncRouteTask(AsyncTask):
             mask_task_set = noroute_downstream_tasks - route_downstream_tasks
 
         for task in mask_task_set:
-            await context.async_context.complete(task)
+            await async_ctx.complete(task)
 
-        return [context]
+        return [async_ctx]
+
 
 class AsyncImmediateShutdownTask(AsyncImmediateTask, AShutdownTask):
     def __init__(
-        self,
-        shutdown_callable: AsyncShutdownCallableProtocol,
-        config: TaskConfig = TaskConfig(),
-        name: str = ""
+        self, shutdown_callable: AsyncShutdownCallableProtocol, config: TaskConfig = TaskConfig(), name: str = ""
     ):
         super().__init__(shutdown_callable, config, name)
 
     async def shutdown(self):
         await self._func.shutdown()
+
 
 class ForSyncGeneratorTask(SyncGeneratorTask, ForgroundTask):
     pass
@@ -476,30 +480,31 @@ class ForSyncLoopTask(SyncLoopTask, ForgroundTask):
     pass
 
 
-
-class InTask(SyncTask, ForgroundTask):
+class InTask(AsyncTask):
     def __init__(self, name: str = "#InTask"):
         super().__init__(None, name=name)
 
-    def call(self, context: Context, env: Environment) -> list[Context]:
-        return [context]
+    async def call(self, async_ctx: AsyncContext, env: Environment) -> list[AsyncContext]:
+        return [async_ctx]
 
-    def __call__(self, context: Context, env: Environment) -> list[Context]:
-        return self.call(context, env)
+    async def __call__(self, context: Context, env: Environment) -> list[Context]:
+        async_ret = await self.call(context.async_context, env)
+        return [ctx.context for ctx in async_ret]
 
 
 class OutTask(AsyncTask):
     def __init__(self, name: str = "#OutTask"):
         super().__init__(None, name=name)
 
-    async def call(self, context: Context, env: Environment) -> list[Context]:
-        if isinstance(context, OutputContext):
-            return [context]
+    async def call(self, async_ctx: AsyncContext, env: Environment) -> list[AsyncContext]:
+        if isinstance(async_ctx.context, OutputContext):
+            return [async_ctx]
         else:
             output_context = OutputContext()
-            await output_context.acopy(context)
-            await context.async_context.destory()
-            return [output_context]
+            await output_context.acopy(async_ctx.context)
+            await async_ctx.destory()
+            return [output_context.async_context]
 
     async def __call__(self, context: Context, env: Environment) -> list[Context]:
-        return await self.call(context, env)
+        asnc_ret = await self.call(context.async_context, env)
+        return [ctx.context for ctx in asnc_ret]

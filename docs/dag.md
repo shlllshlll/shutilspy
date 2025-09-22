@@ -10,114 +10,106 @@ Context 是DAG任务执行中的数据载体，用于在任务之间传递数据
 
 #### AsyncContext
 
-在异步任务中，应该通过AsyncContext操作上下文，AsyncContext可通过如下的方式获取得到：
-
-```python
-context.async_context
-```
+在异步任务中，上下文对象类型是AsyncContext，有如下的操作接口：
 
 **数据读写接口：**
 
 ```python
 # 读取数据
-await context.async_context.get_item("key")
+await async_ctx.get_item("key")
 # 写入数据
-await context.async_context.set_item("key", "value")
+await async_ctx.set_item("key", "value")
 # 删除数据
-await context.async_context.del_item("key")
+await async_ctx.del_item("key")
 # 获取数据长度
-await context.async_context.len()
+await async_ctx.len()
 # 迭代获取key
-for key in await context.async_context:
+for key in await async_ctx:
     print(key)
 # 迭代获取key，方法2
-for key in await context.async_context.keys():
+for key in await async_ctx.keys():
     print(key)
 # 迭代获取value
-for value in await context.async_context.values():
+for value in await async_ctx.values():
     print(value)
 # 迭代获取key和value
-for key, value in await context.async_context.items():
+for key, value in await async_ctx.items():
     print(key, value)
 # 判断key是否存在
-await context.async_context.contains("key")
+await async_ctx.contains("key")
 # 同时写入多个key-value
-await context.async_context.set_data(key1="value1", key2="value2")
+await async_ctx.set_data(key1="value1", key2="value2")
 # 获取数据，key不存在时，返回None
-await context.async_context.get("key")
+await async_ctx.get("key")
 # 获取数据，key不存在时，返回默认值
-await context.async_context.get("key", "default")
+await async_ctx.get("key", "default")
 # 获取读锁
-async with context.async_context.rlock():
-    await do_something(context)
+async with async_ctx.rlock():
+    await do_something(async_ctx)
 # 获取写锁
-async with context.async_context.wlock():
-    await do_something(context)
+async with async_ctx.wlock():
+    await do_something(async_ctx)
 ```
 
 **上下文控制接口：**
 
 ```python
 # 创建新context，用于数据生成任务中
-new_context = await context.async_context.create()
+new_context = await async_ctx.create()
 # 销毁当前context，当任务中不在需要当前context
-await context.async_context.destory()
+await async_ctx.destory()
 ```
 
 #### SyncContext
 
-在同步任务中，应该通过SyncContext操作上下文，SyncContext可通过如下的方式获取得到：
-
-```python
-context.sync_context
-```
+在同步任务中，上下文对象类型是SyncContext，有如下的操作接口：
 
 **数据读写接口：**
 
 ```python
 # 读取数据
-context.sync_context["key"]
+sync_ctx["key"]
 # 写入数据
-context.sync_context["key"] = "value"
+sync_ctx["key"] = "value"
 # 删除数据
-del context.sync_context["key"]
+del sync_ctx["key"]
 # 获取数据长度
-len(context.sync_context)
+len(sync_ctx)
 # 迭代获取key
-for key in context.sync_context:
+for key in sync_ctx:
     print(key)
 # 迭代获取key，方法2
-for key in context.sync_context.keys():
+for key in sync_ctx.keys():
     print(key)
 # 迭代获取value
-for value in context.sync_context.values():
+for value in sync_ctx.values():
     print(value)
 # 迭代获取key和value
-for key, value in context.sync_context.items():
+for key, value in sync_ctx.items():
     print(key, value)
 # 判断key是否存在
-"key" in context.sync_context
+"key" in sync_ctx
 # 同时写入多个key-value
-context.sync_context.set_data(key1="value1", key2="value2")
+sync_ctx.set_data(key1="value1", key2="value2")
 # 获取数据，key不存在时，返回None
-context.sync_context.get("key")
+sync_ctx.get("key")
 # 获取数据，key不存在时，返回默认值
-context.sync_context.get("key", "default")
+sync_ctx.get("key", "default")
 # 获取读锁
-with context.sync_context.rlock():
-    do_something(context)
+with sync_ctx.rlock():
+    do_something(sync_ctx)
 # 获取写锁
-with context.sync_context.wlock():
-    do_something(context)
+with sync_ctx.wlock():
+    do_something(sync_ctx)
 ```
 
 **上下文控制接口：**
 
 ```python
 # 创建新context，用于数据生成任务中
-new_context = context.sync_context.create()
+new_context = sync_ctx.create()
 # 销毁当前context，当任务中不在需要当前context
-context.sync_context.destory()
+sync_ctx.destroy()
 ```
 
 ### Task任务
@@ -129,21 +121,21 @@ context.sync_context.destory()
 - `AsyncImmediateTask`: 简单异步任务，即传入context，对context进行一些处理，随后返回处理后的context
 
   ```python
-  async def process_data(context):
-    data = await context.async_context.get("key", None)
+  async def process_data(async_ctx: AsyncContext) -> AsyncContext | list[AsyncContext] | None:
+    data = await async_ctx.get("key", None)
     if data is None:
-        logger.error(f"data is None, context: {context}")
+        logger.error(f"data is None, context: {async_ctx}")
         # context不符合预期，返回None，丢弃当前context
         return None
     if data == "create_new_context":
         # 创建新的context
-        new_context = await context.async_context.create()
+        new_context = await async_ctx.create()
         # 同时返回新的context和输入的context
-        return [new_context, context]
+        return [new_context, async_ctx]
     new_data = await process_data(data)
-    await context.async_context.set("key", new_data)
+    await async_ctx.set("key", new_data)
     # 处理完成返回当前context
-    return context
+    return async_ctx
 
   task = dag.AsyncImmediateTask(process_data)
   ```
@@ -151,8 +143,8 @@ context.sync_context.destory()
 - `AsyncRouteTask`: 路由任务，根据输入context的某个字段值，决定将context发送到哪些下游任务处理，默认情况下，路由任务会将context发送到所有下游任务处理。
 
   ```python
-  async def route_task(context) -> str | TaskBase | list[str | TaskBase]:
-    data = await context.async_context.get("key", None)
+  async def route_task(async_ctx: AsyncContext) -> str | TaskBase | list[str | TaskBase]:
+    data = await async_ctx.get("key", None)
     if data == "route_to_task1":
         return "task1"  # 发送到task1处理，可以指定下游task的id名，也可以直接返回下游task的实例；可以返回一个list，表示发送到多个下游任务
     elif data == "route_to_task2":
@@ -171,10 +163,10 @@ context.sync_context.destory()
     next_context = yield
     while True:
         cur_context = next_context
-        data = await cur_context.async_context.get("key", None)
+        data = await cur_context.get("key", None)
         # 异步处理数据
         result = await process_data(data)
-        await cur_context.async_context.set("key", result)
+        await cur_context.set("key", result)
         # 传出当前context并接收下一个传入的context
         next_context = yield cur_context
 
@@ -189,8 +181,8 @@ context.sync_context.destory()
     while True:
         async with aiofile.async_open("file.txt", "r") as f:
             async for line in f:
-                new_context = await start_context.async_context.create()
-                await new_context.async_context.set("line", line)
+                new_context = await start_context.create()
+                await new_context.set("line", line)
                 # 传出当前context并接收下一个传入的context
                 yield new_context
 
@@ -203,14 +195,14 @@ context.sync_context.destory()
   async def long_running_task(queue):
     async with aiofile.async_open("file.txt", "w") as f:
         while True:
-          context, future = await queue.get()
+          async_ctx, future = await queue.get()
           # dag执行结束后，dag框架会通过queue传入一个StopContext，用于通知任务结束，此时需要退出任务
-          if isinstance(context, dag.StopContext):
+          if isinstance(async_ctx.context, dag.StopContext):
               break
-          data = await context.async_context.get("data", None)
+          data = await async_ctx.get("data", None)
           await f.write(data)
           # 处理完成，通过asyncio.Future将context返回dag框架
-          future.set_result(context)
+          future.set_result(async_ctx)
 
   task = dag.AsyncLongrunTask(long_running_task)
   ```
@@ -312,9 +304,9 @@ from shutils.dag import ExecutorConfig
 
 config = ExecutorConfig(
     # 执行器数量，决定了Executor能够同时处理Context的数量
-    worker_num=1,
+    context_worker_num=1,
     # 子执行器数量，决定了一个Context能够同时执行的Task的数量；设置为小于1的值时，表示不限制子执行器数量
-    sub_worker_num=1
+    task_worker_num=1
 )
 ```
 
@@ -337,6 +329,7 @@ dag_graph.visualize(dag_graph, host="0.0.0.0", port=8088)
 
 # TODO
 
-- [ ] 去除Executor中两级任务执行的设计，仅使用一级，简化执行逻辑
-- [ ] 统一Context中各种同步、异步借口设计，取消需要先显示获取async_context和sync_context以及white_board的设计，统一通过context.xxx的方式访问，根据执行环境自动切换同步异步方式
+- [ ] ~~去除Executor中两级任务执行的设计，仅使用一级，简化执行逻辑~~
+- [x] 统一Context中各种同步、异步接口设计，取消需要先显示获取async_context和sync_context以及white_board的设计，统一通过context.xxx的方式访问，根据执行环境自动切换同步异步方式
+- [x] 通用的worker级别全局变量管理和全局资源管理器
 - [ ] 调试和可视化功能增强，通过网页端可以查看context、task的任务执行情况，可以在执行task的时候，同步启动一个web服务，实时查看dag的执行情况

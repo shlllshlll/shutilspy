@@ -9,7 +9,9 @@ Brief:
 
 import time
 from dataclasses import dataclass
+import contextvars
 import logging
+from typing import Any
 from typing import Coroutine, Iterable
 import asyncio
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
@@ -30,12 +32,47 @@ from .context_queue import ContextPriority
 
 
 logger = logging.getLogger(__name__)
+_worker_context_var: contextvars.ContextVar[dict[Any, Any]] = contextvars.ContextVar("worker_context")
 
+class WorkerLocalProxy:
+    def __getattr__(self, name: str):
+        try:
+            # 获取当前上下文中的 worker 存储，然后从该存储中获取属性
+            # Get the worker storage from the current context, then get the attribute from it
+            return _worker_context_var.get()[name]
+        except (LookupError, KeyError):
+            # 如果 contextvar 未设置或属性不存在，则引发 AttributeError
+            # This makes it behave like a normal object
+            raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
+
+    def __setattr__(self, name: str, value: Any):
+        try:
+            # 获取当前上下文中的 worker 存储，然后设置该存储的属性
+            # Get the worker storage from the current context, then set an attribute on it
+            _worker_context_var.get()[name] = value
+        except LookupError:
+            raise RuntimeError(
+                "Cannot set attribute on worker_local outside of a running worker context."
+            )
+
+    def __delattr__(self, name: str):
+        try:
+            # 删除属性
+            del _worker_context_var.get()[name]
+        except (LookupError, KeyError):
+            raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
+
+    def __contains__(self, item: str) -> bool:
+        try:
+            return item in _worker_context_var.get()
+        except LookupError:
+            return False
+worker_local = WorkerLocalProxy()
 
 @dataclass
 class ExecutorConfig:
-    worker_num: int = 1
-    sub_worker_num: int = 1
+    context_worker_num: int = 1
+    task_worker_num: int = 1
     context_queue_timeout: float | None = 1
     thread_pool_worker_num: int | None = 0
     process_pool_worker_num: int | None = 0
@@ -82,7 +119,7 @@ class Executor:
         logger.info(f"[Executor.run]: put input context to async queue done")
 
         env = Environment(self.runtime, self.__process_pool, self.dag)
-        worker_tasks = [asyncio.create_task(self.__worker_loop(idx, env)) for idx in range(self.__config.worker_num)]
+        worker_tasks = [asyncio.create_task(self.__worker_loop(idx, env)) for idx in range(self.__config.context_worker_num)]
         output = await asyncio.gather(*worker_tasks)
         output_context = []
         for output_context_list in output:
@@ -156,6 +193,7 @@ class Executor:
 
     async def __worker_loop(self, idx: int, env: Environment) -> list[OutputContext]:
         output_context: list[OutputContext] = []
+        worker_storage = {}
         while True:
             try:
                 async with self.runtime.check_get_context(self.__config.context_queue_timeout) as in_context:
@@ -176,10 +214,12 @@ class Executor:
                 tasks = [
                     self.__run_task(idx, sub_idx, task, in_context, env) for sub_idx, task in enumerate(avaliable_tasks)
                 ]
-                if self.__config.sub_worker_num > 0:
-                    semaphore = asyncio.Semaphore(self.__config.sub_worker_num)
+                if self.__config.task_worker_num > 0:
+                    semaphore = asyncio.Semaphore(self.__config.task_worker_num)
                     tasks = [self.__async_limit(semaphore, task) for task in tasks]
+                token = _worker_context_var.set(worker_storage)
                 context_list_list = await asyncio.gather(*tasks)
+                _worker_context_var.reset(token)
                 context_list = [context for context_list in context_list_list for context in context_list]
                 if len(context_list_list) > 1:
                     # need deduplicate
@@ -216,12 +256,12 @@ class Executor:
             for context in output_context:
                 # collect parent contexts
                 parent_context = await context.async_context.parent_context()
-                if parent_context is not None and not parent_context.is_destory():
-                    out_context_set.add(parent_context)
+                if parent_context is not None and not parent_context.context.is_destory():
+                    out_context_set.add(parent_context.context)
                 # collect child contexts
                 async for child_context in context.async_context.iter_child_context():
-                    if not child_context.is_destory():
-                        out_context_set.add(child_context)
+                    if not child_context.context.is_destory():
+                        out_context_set.add(child_context.context)
 
             # contexts that are in input context but not in output context should be destoryed
             destory_context_set = in_context_set - out_context_set
@@ -234,12 +274,12 @@ class Executor:
             for context in in_context:
                 # collect parent contexts
                 parent_context = await context.async_context.parent_context()
-                if parent_context is not None and not parent_context.is_destory():
-                    in_context_set.add(parent_context)
+                if parent_context is not None and not parent_context.context.is_destory():
+                    in_context_set.add(parent_context.context)
                 # collect child contexts
                 async for child_context in context.async_context.iter_child_context():
-                    if not child_context.is_destory():
-                        in_context_set.add(child_context)
+                    if not child_context.context.is_destory():
+                        in_context_set.add(child_context.context)
             # contexts that are in output context but not in input context should mask it's bypass tasks
             new_context_set = out_context_set - in_context_set
             new_context_set = {item for item in new_context_set if not isinstance(item, LoopContext)}

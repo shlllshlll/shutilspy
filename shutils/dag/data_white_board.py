@@ -13,8 +13,6 @@ from typing import Any, Callable, TypeVar
 from dataclasses import dataclass, field
 from ..rwlock import RWLock, AsyncRWLock
 
-T = TypeVar("T")
-
 
 class DataWhiteBoardMixin:
     """
@@ -63,7 +61,7 @@ class SyncDataWhiteBoard:
     def __len__(self):
         with self.__data_white_board._sync_lock.read():
             return len(self.__data_white_board._data)
-        
+
     @contextmanager
     def __iter__(self):
         with self.__data_white_board._sync_lock.read():
@@ -85,12 +83,12 @@ class SyncDataWhiteBoard:
     def keys(self):
         with self.__data_white_board._sync_lock.read():
             yield from self.__data_white_board._data.keys()
-    
+
     @contextmanager
     def values(self):
         with self.__data_white_board._sync_lock.read():
             yield from self.__data_white_board._data.values()
-    
+
     @contextmanager
     def items(self):
         with self.__data_white_board._sync_lock.read():
@@ -117,11 +115,11 @@ class SyncDataWhiteBoard:
 
 
 class AsyncDataWhiteBoard:
-    async def read_wrapper(self, func: Callable[..., T], *args, **kwargs):
+    async def read_wrapper[T](self, func: Callable[..., T], *args, **kwargs):
         async with self.__data_white_board._async_lock.read():
             return func(*args, **kwargs)
 
-    async def write_wrapper(self, func: Callable[..., T], *args, **kwargs):
+    async def write_wrapper[T](self, func: Callable[..., T], *args, **kwargs):
         async with self.__data_white_board._async_lock.write():
             return func(*args, **kwargs)
 
@@ -157,7 +155,7 @@ class AsyncDataWhiteBoard:
 
     def keys(self):
         return self.read_wrapper(self.__data_white_board.sync_white_board.keys)
-    
+
     def values(self):
         return self.read_wrapper(self.__data_white_board.sync_white_board.values)
 
