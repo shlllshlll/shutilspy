@@ -284,6 +284,7 @@ class SyncLongrunTask(SyncTask, LongrunTask, ShutdownTask):
             self.__thread = threading.Thread(target=self._func, args=(self.__input_queue,))
             self.__thread.start()
         if not self.__thread.is_alive():
+            logger.error(f"[SyncLongrunTask]: thread exit unexpectedly")
             raise RuntimeError("thread is not alive")
         future = queue.Queue()
         self.__input_queue.put((sync_ctx, future))
@@ -315,12 +316,27 @@ class AsyncLongrunTask(AsyncTask, LongrunTask, AShutdownTask):
         self.__task = None
         self._func = func
 
+    def _task_down_callback(self, task: asyncio.Task):
+        if self.__future.done():
+            return
+
+        try:
+            result = task.result()
+            self.__future.set_result(result)
+        except Exception as e:
+            logger.error(f"[AsyncLongrunTask]: task exit with exception: {e}")
+            self.__future.set_exception(e)
+
     async def call(self, async_ctx: AsyncContext, env: Environment) -> list[AsyncContext]:
         if self.__task is None:
             self.__task = asyncio.create_task(self._func(self.__input_queue))
-        future = asyncio.Future()
-        await self.__input_queue.put((async_ctx, future))
-        result = await future
+            self.__task.add_done_callback(self._task_down_callback)
+        elif self.__task.done():
+            logger.error(f"[AsyncLongrunTask]: task exit unexpectedly")
+            raise RuntimeError("task is not alive")
+        self.__future = asyncio.Future()
+        await self.__input_queue.put((async_ctx, self.__future))
+        result = await self.__future
 
         if isinstance(result, AsyncContext):
             return [result]
@@ -332,7 +348,7 @@ class AsyncLongrunTask(AsyncTask, LongrunTask, AShutdownTask):
         return f"AsyncLongrunTask(func={self._func}, {TaskBase.__repr__(self)})"
 
     async def shutdown(self):
-        if self.__task:
+        if self.__task and not self.__task.done():
             await self.__input_queue.put((StopContext().async_context, asyncio.Future()))
             await self.__task
             self.__task = None
