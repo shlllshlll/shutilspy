@@ -12,6 +12,7 @@ from .context import Context, AsyncContext, SyncContext, OutputContext, StopCont
 from .context_queue import SyncContextQueue, AsyncContextQueue
 from .dag import DAG
 from .executor import Executor, ExecutorConfig, worker_local
+from .serve_executor import ServeExecutor
 from .runtime import Runtime
 from .task import (
     TaskConfig,

@@ -288,12 +288,6 @@ dag_graph.build()
 
 Executor 是 DAG 的任务执行器，在 dag 构建结束后，就可以通过 Executor 来执行任务了。
 
-```python
-from shutils.dag import Executor
-
-executor = Executor(dag_graph)
-ret = await executor.run()
-```
 
 ### 执行器参数
 
@@ -309,6 +303,43 @@ config = ExecutorConfig(
     task_worker_num=1
 )
 ```
+
+### 离线执行器
+
+默认的Exector是一个批量执行器，即一次性将所有的Context送入DAG中进行处理或由其中的Task生成Context，直到所有Context处理完成后，Executor结束执行并返回结果。这种Executor非常适合离线DAG任务的处理。
+
+```python
+from shutils.dag import Executor
+
+executor = Executor(dag_graph)
+ret = await executor.run()
+```
+
+### 在线执行器
+
+在诸如服务器等场景下，我们需要一个在线执行器，即DAG执行器能够持续接收Context进行处理，而不是一次性将所有Context送入DAG中进行处理。shutilspy 提供了一个 ServeExecutor 用于在线DAG任务的处理，通过`提交任务-等待任务-查询任务`的方式实现任务的处理。
+
+```python
+import asyncio
+from shutils.dag import ServeExecutor, Context
+
+executor = ServeExecutor(dag_graph)
+executor_task = asyncio.create_task(executor.run())
+
+# 提交任务
+context = Context(executor.runtime)
+context.sync_context['a'] = 3
+context.sync_context['b'] = 5
+task_id = await executor.submit_task(context)
+
+# 查询任务状态
+task_status = await executor.get_task_status(task_id)
+print(task_status)
+
+# 等待任务完成并获取结果
+result = await executor.get_task_result(task_id)
+```
+
 
 ## 可视化
 
@@ -327,9 +358,10 @@ dag_graph.build()
 dag_graph.visualize(dag_graph, host="0.0.0.0", port=8088)
 ```
 
-# TODO
+## TODO
 
 - [ ] ~~去除Executor中两级任务执行的设计，仅使用一级，简化执行逻辑~~
 - [x] 统一Context中各种同步、异步接口设计，取消需要先显示获取async_context和sync_context以及white_board的设计，统一通过context.xxx的方式访问，根据执行环境自动切换同步异步方式
 - [x] 通用的worker级别全局变量管理和全局资源管理器
+- [x] 新增支持服务模型的Executor，可以将dag中的task作为一个长期运行的服务，持续接收context进行处理
 - [ ] 调试和可视化功能增强，通过网页端可以查看context、task的任务执行情况，可以在执行task的时候，同步启动一个web服务，实时查看dag的执行情况

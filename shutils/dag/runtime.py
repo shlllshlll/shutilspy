@@ -74,9 +74,9 @@ class Runtime(ContextQueueMixin, RuntimeCounterMixin):
         RuntimeCounterMixin.__init__(self)
 
     @asynccontextmanager
-    async def check_get_context(self, timeout: float | None = None) -> AsyncGenerator[Context, None]:
+    async def check_get_context(self, timeout: float | None = None, use_counter: bool = True) -> AsyncGenerator[Context, None]:
         counter = self.counter
-        if counter > 0:
+        if not use_counter or counter > 0:
             async with asyncio.timeout(timeout):
                 async with self.async_queue._get_with_context() as context:
                     pass

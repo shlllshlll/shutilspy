@@ -254,7 +254,13 @@ class OutputContext(Context):
     def __init__(self, context: Context | None = None, name: str = "OutputContext"):
         super().__init__(None, name=name)
         if context:
+            self.id = context.id
             context.sync_white_board.copy(self)
 
     async def acopy(self, context: Context):
+        self.id = context.id
         await context.async_white_board.copy(self)
+
+
+    def asdit(self) -> dict:
+        return self._data

@@ -92,13 +92,13 @@ class Executor:
         else:
             self.runtime = runtime
         self.dag = dag
-        self.__config = config
-        if self.__config.process_pool_worker_num != 0:
-            self.__process_pool = ProcessPoolExecutor(max_workers=self.__config.process_pool_worker_num)
+        self._config = config
+        if self._config.process_pool_worker_num != 0:
+            self._process_pool = ProcessPoolExecutor(max_workers=self._config.process_pool_worker_num)
         else:
-            self.__process_pool = None
-        if self.__config.thread_pool_worker_num != 0:
-            self.__thread_pool = ThreadPoolExecutor(max_workers=self.__config.thread_pool_worker_num)
+            self._process_pool = None
+        if self._config.thread_pool_worker_num != 0:
+            self.__thread_pool = ThreadPoolExecutor(max_workers=self._config.thread_pool_worker_num)
         else:
             self.__thread_pool = None
 
@@ -118,8 +118,8 @@ class Executor:
             await self.runtime.async_queue.put(context)
         logger.info(f"[Executor.run]: put input context to async queue done")
 
-        env = Environment(self.runtime, self.__process_pool, self.dag)
-        worker_tasks = [asyncio.create_task(self.__worker_loop(idx, env)) for idx in range(self.__config.context_worker_num)]
+        env = Environment(self.runtime, self._process_pool, self.dag)
+        worker_tasks = [asyncio.create_task(self.__worker_loop(idx, env)) for idx in range(self._config.context_worker_num)]
         output = await asyncio.gather(*worker_tasks)
         output_context = []
         for output_context_list in output:
@@ -132,7 +132,7 @@ class Executor:
                 await task.shutdown()
         return output_context
 
-    async def __run_task(
+    async def _run_task(
         self, idx: int, sub_idx: int, task: TaskBase, in_context: Context, env: Environment
     ) -> list[Context]:
         if task in in_context.awake_time:
@@ -187,16 +187,16 @@ class Executor:
         return context_list
 
     @staticmethod
-    async def __async_limit(semaphore: asyncio.Semaphore, coro: Coroutine):
+    async def _async_limit(semaphore: asyncio.Semaphore, coro: Coroutine):
         async with semaphore:
             return await coro
 
-    async def __worker_loop(self, idx: int, env: Environment) -> list[OutputContext]:
+    async def _worker_loop(self, idx: int, env: Environment) -> list[OutputContext]:
         output_context: list[OutputContext] = []
         worker_storage = {}
         while True:
             try:
-                async with self.runtime.check_get_context(self.__config.context_queue_timeout) as in_context:
+                async with self.runtime.check_get_context(self._config.context_queue_timeout) as in_context:
                     logger.debug(f"[Worker{idx}]: get context[{in_context}] from async queue done")
                     if isinstance(in_context, StopContext):
                         logger.info(f"[Worker{idx}]: get StopContext, break")
@@ -212,11 +212,11 @@ class Executor:
                         continue
 
                 tasks = [
-                    self.__run_task(idx, sub_idx, task, in_context, env) for sub_idx, task in enumerate(avaliable_tasks)
+                    self._run_task(idx, sub_idx, task, in_context, env) for sub_idx, task in enumerate(avaliable_tasks)
                 ]
-                if self.__config.task_worker_num > 0:
-                    semaphore = asyncio.Semaphore(self.__config.task_worker_num)
-                    tasks = [self.__async_limit(semaphore, task) for task in tasks]
+                if self._config.task_worker_num > 0:
+                    semaphore = asyncio.Semaphore(self._config.task_worker_num)
+                    tasks = [self._async_limit(semaphore, task) for task in tasks]
                 token = _worker_context_var.set(worker_storage)
                 context_list_list = await asyncio.gather(*tasks)
                 _worker_context_var.reset(token)
@@ -224,7 +224,7 @@ class Executor:
                 if len(context_list_list) > 1:
                     # need deduplicate
                     context_list = list(set(context_list))
-                await self.__context_postprocess(in_context, context_list, avaliable_tasks)
+                await self._context_postprocess(in_context, context_list, avaliable_tasks)
                 for out_context in context_list:
                     if isinstance(out_context, OutputContext):
                         output_context.append(out_context)
@@ -240,10 +240,10 @@ class Executor:
                 continue
         return output_context
 
-    async def __context_postprocess(
+    async def _context_postprocess(
         self, in_context: Iterable[Context] | Context, output_context: Iterable[Context], running_tasks: list[TaskBase]
     ):
-        if not self.__config.enable_context_gc and not self.__config.enbale_context_bypass:
+        if not self._config.enable_context_gc and not self._config.enbale_context_bypass:
             return
 
         if isinstance(in_context, Context):
@@ -251,7 +251,7 @@ class Executor:
         in_context_set = set([context for context in in_context if not context.is_destory()])
         out_context_set = set([context for context in output_context if not context.is_destory()])
 
-        if self.__config.enable_context_gc and in_context_set:
+        if self._config.enable_context_gc and in_context_set:
             # collect all output contexts
             for context in output_context:
                 # collect parent contexts
@@ -269,7 +269,7 @@ class Executor:
                 logger.debug(f"[ContextGC]: {context} is not in output context, destory")
                 await context.async_context.destory()
 
-        if self.__config.enbale_context_bypass and out_context_set:
+        if self._config.enbale_context_bypass and out_context_set:
             # collect all input contexts
             for context in in_context:
                 # collect parent contexts
