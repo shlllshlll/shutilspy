@@ -16,18 +16,26 @@ on:
 jobs:
   release:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -l {0}
+    environment:
+      name: pypi
+      url: https://pypi.org/p/shutilspy
+    permissions:
+      id-token: write
+      contents: write
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.14"]
-
+        python-version: ["3.13"]
     steps:
       - name: Set Variable
         env:
           INPUT_TAG: ${{ inputs.tag }}
           PUSH_TAG: ${{ github.ref }}
         run: |
-          if [ -z "${INPUT_TAG}"]; then
+          if [ -z "${INPUT_TAG}" ]; then
             TAG=${PUSH_TAG}
           else
             TAG=${INPUT_TAG}
@@ -56,29 +64,39 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install flake8 pytest
           python -m pip install build setuptools
-          conda install conda-build
+          conda install conda-build anaconda-client
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
       - name: Build wheel
         run: |
           python -m build -nw
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
       - name: Build conda package shutilspy
         run: |
+          mkdir -p conda-dist
           OUT_FILE=$(conda build -b --output -c conda-forge recipe)
           conda build --no-test --no-anaconda-upload -c conda-forge recipe
-          ls -l /usr/share/miniconda/conda-bld/noarch
-          cp $OUT_FILE dist/
+          cp $OUT_FILE conda-dist/
       - name: Build conda package shutilspy-visualizer
         run: |
           OUT_FILE=$(conda build -b --output -c conda-forge recipe-visualizer)
           conda build --no-test --no-anaconda-upload -c conda-forge recipe-visualizer
-          ls -l /usr/share/miniconda/conda-bld/noarch
-          cp $OUT_FILE dist/
+          cp $OUT_FILE conda-dist/
+      - name: Upload to Anaconda.org
+        env:
+          ANACONDA_TOKEN: ${{ secrets.ANACONDA_TOKEN }}
+        run: |
+          anaconda --token "$ANACONDA_TOKEN" upload --user shlllhub --label main conda-dist/*
       - name: Create Release
         id: create_release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TAG }}
           name: Release ${{ env.VERSION }}
-          files: dist/*
+          files: |
+            dist/*
+            conda-dist/*
           draft: false
           prerelease: false
