@@ -19,11 +19,11 @@ from .runtime import Runtime
 from .dag import DAG
 from .task import (
     TaskBase,
-    ForgroundTask,
+    ForegroundTask,
     AsyncTask,
     SyncTask,
     ShutdownTask,
-    AShutdownTask,
+    AsyncShutdownTask,
     Environment,
 )
 from .context import Context, OutputContext, StopContext, LoopContext, RateLimitContext
@@ -128,7 +128,7 @@ class Executor:
         for task in self.dag.tasks.values():
             if isinstance(task, ShutdownTask):
                 task.shutdown()
-            elif isinstance(task, AShutdownTask):
+            elif isinstance(task, AsyncShutdownTask):
                 await task.shutdown()
         return output_context
 
@@ -146,7 +146,7 @@ class Executor:
         context_list = []
         try:
             logger.debug(f"[Worker{idx}-{sub_idx}]: {in_context} begin running {task}")
-            if isinstance(task, ForgroundTask):
+            if isinstance(task, ForegroundTask):
                 if isinstance(task, SyncTask):
                     context_list = task(in_context, env)
                 else:

@@ -179,7 +179,7 @@
                 circle.setAttribute("cx", node.x);
                 circle.setAttribute("cy", node.y);
                 circle.setAttribute("r", "20");
-                circle.setAttribute("fill", node.type === 'InTask' || node.type === 'OutTask' ? "#ff7875" : "#69c0ff");
+                circle.setAttribute("fill", node.type === 'SourceNode' || node.type === 'SinkNode' ? "#ff7875" : "#69c0ff");
                 circle.setAttribute("stroke", "#fff");
                 circle.setAttribute("stroke-width", "2");
                 svg.appendChild(circle);
@@ -339,7 +339,7 @@
             nodes.forEach(node => {
                 const nodeElement = document.createElement('div');
                 nodeElement.className = 'node';
-                if (node.type === 'InTask' || node.type === 'OutTask') {
+                if (node.type === 'SourceNode' || node.type === 'SinkNode') {
                     nodeElement.classList.add('input-output');
                 }
                 

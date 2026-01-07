@@ -94,11 +94,11 @@ class TaskBase(ABC):
         return f"id={self.id}, config={self.config}"
 
 
-class ForgroundTask(ABC):
+class ForegroundTask(ABC):
     pass
 
 
-class LongrunTask(ABC):
+class LongRunningTask(ABC):
     pass
 
 
@@ -108,7 +108,7 @@ class ShutdownTask(ABC):
         pass
 
 
-class AShutdownTask(ABC):
+class AsyncShutdownTask(ABC):
     @abstractmethod
     async def shutdown(self):
         pass
@@ -144,7 +144,7 @@ class AsyncTask(TaskBase):
         return ret
 
 
-class SyncProcessTask(AsyncTask):
+class ProcessTask(AsyncTask):
     def __init__(
         self,
         func: Callable[[SyncContext], list[SyncContext] | SyncContext],
@@ -188,7 +188,7 @@ class SyncProcessTask(AsyncTask):
         return output_context_list
 
 
-class SyncGeneratorTask(SyncTask, ShutdownTask):
+class SyncStreamTask(SyncTask, ShutdownTask):
     def __init__(
         self,
         func: Callable[[], Generator[SyncContext | list[SyncContext] | None, SyncContext, None]],
@@ -222,7 +222,7 @@ class SyncGeneratorTask(SyncTask, ShutdownTask):
             pass
 
 
-class SyncImmediateTask(SyncTask):
+class SyncFunctionTask(SyncTask):
     def __init__(
         self,
         func: Callable[[SyncContext], list[SyncContext] | SyncContext | None],
@@ -241,10 +241,10 @@ class SyncImmediateTask(SyncTask):
         return ret
 
     def __repr__(self):
-        return f"SyncImmediateTask(func={self._func}, {TaskBase.__repr__(self)})"
+        return f"SyncFunctionTask(func={self._func}, {TaskBase.__repr__(self)})"
 
 
-class SyncImmediateShutdownTask(SyncImmediateTask, ShutdownTask):
+class SyncFunctionShutdownTask(SyncFunctionTask, ShutdownTask):
     def __init__(self, shutdown_callable: ShutdownCallableProtocol, config: TaskConfig = TaskConfig(), name: str = ""):
         super().__init__(shutdown_callable, config, name)
 
@@ -252,7 +252,7 @@ class SyncImmediateShutdownTask(SyncImmediateTask, ShutdownTask):
         self._func.shutdown()
 
 
-class SyncLoopTask(SyncGeneratorTask):
+class SyncLoopTask(SyncStreamTask):
     def call(self, sync_ctx: SyncContext, env: Environment) -> list[SyncContext]:
         need_create_loop_context = isinstance(sync_ctx.context, LoopContext) == False
         ret = super().call(sync_ctx, env)
@@ -267,7 +267,7 @@ class SyncLoopTask(SyncGeneratorTask):
         return ret
 
 
-class SyncLongrunTask(SyncTask, LongrunTask, ShutdownTask):
+class SyncThreadTask(SyncTask, LongRunningTask, ShutdownTask):
     def __init__(
         self,
         func: Callable[[queue.Queue[tuple[Context, queue.Queue[list[Context] | Context | None]]]], None],
@@ -284,7 +284,7 @@ class SyncLongrunTask(SyncTask, LongrunTask, ShutdownTask):
             self.__thread = threading.Thread(target=self._func, args=(self.__input_queue,))
             self.__thread.start()
         if not self.__thread.is_alive():
-            logger.error(f"[SyncLongrunTask]: thread exit unexpectedly")
+            logger.error(f"[SyncThreadTask]: thread exit unexpectedly")
             raise RuntimeError("thread is not alive")
         future = queue.Queue()
         self.__input_queue.put((sync_ctx, future))
@@ -304,7 +304,7 @@ class SyncLongrunTask(SyncTask, LongrunTask, ShutdownTask):
             self.__thread.join()
 
 
-class AsyncLongrunTask(AsyncTask, LongrunTask, AShutdownTask):
+class AsyncServiceTask(AsyncTask, LongRunningTask, AsyncShutdownTask):
     def __init__(
         self,
         func: Callable[[asyncio.Queue[tuple[AsyncContext, asyncio.Future]]], Coroutine[Any, Any, None]],
@@ -324,7 +324,7 @@ class AsyncLongrunTask(AsyncTask, LongrunTask, AShutdownTask):
             result = task.result()
             self.__future.set_result(result)
         except Exception as e:
-            logger.error(f"[AsyncLongrunTask]: task exit with exception: {e}")
+            logger.error(f"[AsyncServiceTask]: task exit with exception: {e}")
             self.__future.set_exception(e)
 
     async def call(self, async_ctx: AsyncContext, env: Environment) -> list[AsyncContext]:
@@ -332,7 +332,7 @@ class AsyncLongrunTask(AsyncTask, LongrunTask, AShutdownTask):
             self.__task = asyncio.create_task(self._func(self.__input_queue))
             self.__task.add_done_callback(self._task_down_callback)
         elif self.__task.done():
-            logger.error(f"[AsyncLongrunTask]: task exit unexpectedly")
+            logger.error(f"[AsyncServiceTask]: task exit unexpectedly")
             raise RuntimeError("task is not alive")
         self.__future = asyncio.Future()
         await self.__input_queue.put((async_ctx, self.__future))
@@ -345,7 +345,7 @@ class AsyncLongrunTask(AsyncTask, LongrunTask, AShutdownTask):
         return []
 
     def __repr__(self):
-        return f"AsyncLongrunTask(func={self._func}, {TaskBase.__repr__(self)})"
+        return f"AsyncServiceTask(func={self._func}, {TaskBase.__repr__(self)})"
 
     async def shutdown(self):
         if self.__task and not self.__task.done():
@@ -354,7 +354,7 @@ class AsyncLongrunTask(AsyncTask, LongrunTask, AShutdownTask):
             self.__task = None
 
 
-class AsyncGeneratorTask(AsyncTask, AShutdownTask):
+class AsyncStreamTask(AsyncTask, AsyncShutdownTask):
     def __init__(
         self,
         func: Callable[[], AsyncGenerator[AsyncContext | list[AsyncContext] | None, AsyncContext]],
@@ -391,7 +391,7 @@ class AsyncGeneratorTask(AsyncTask, AShutdownTask):
             pass
 
 
-class AsyncLoopTask(AsyncGeneratorTask):
+class AsyncLoopTask(AsyncStreamTask):
     async def call(self, async_ctx: AsyncContext, env: Environment) -> list[AsyncContext]:
         need_create_loop_context = isinstance(async_ctx.context, LoopContext) == False
         ret = await super().call(async_ctx, env)
@@ -405,7 +405,7 @@ class AsyncLoopTask(AsyncGeneratorTask):
         return ret
 
 
-class AsyncImmediateTask(AsyncTask):
+class AsyncFunctionTask(AsyncTask):
     def __init__(
         self,
         func: Callable[[AsyncContext], Coroutine[Any, Any, list[AsyncContext] | AsyncContext | None]],
@@ -424,10 +424,10 @@ class AsyncImmediateTask(AsyncTask):
         return ret
 
     def __repr__(self):
-        return f"AsyncImmediateTask(func={self._func}, {TaskBase.__repr__(self)})"
+        return f"AsyncFunctionTask(func={self._func}, {TaskBase.__repr__(self)})"
 
 
-class AsyncRouteTask(AsyncTask):
+class AsyncRouterTask(AsyncTask):
     def __init__(
         self,
         func: Callable[[AsyncContext], Coroutine[Any, Any, str | TaskBase | list[str | TaskBase]]],
@@ -474,7 +474,7 @@ class AsyncRouteTask(AsyncTask):
         return [async_ctx]
 
 
-class AsyncImmediateShutdownTask(AsyncImmediateTask, AShutdownTask):
+class AsyncFunctionShutdownTask(AsyncFunctionTask, AsyncShutdownTask):
     def __init__(
         self, shutdown_callable: AsyncShutdownCallableProtocol, config: TaskConfig = TaskConfig(), name: str = ""
     ):
@@ -484,20 +484,20 @@ class AsyncImmediateShutdownTask(AsyncImmediateTask, AShutdownTask):
         await self._func.shutdown()
 
 
-class ForSyncGeneratorTask(SyncGeneratorTask, ForgroundTask):
+class ForegroundSyncStreamTask(SyncStreamTask, ForegroundTask):
     pass
 
 
-class ForSyncImmediateTask(SyncImmediateTask, ForgroundTask):
+class ForegroundSyncFunctionTask(SyncFunctionTask, ForegroundTask):
     pass
 
 
-class ForSyncLoopTask(SyncLoopTask, ForgroundTask):
+class ForegroundSyncLoopTask(SyncLoopTask, ForegroundTask):
     pass
 
 
-class InTask(AsyncTask):
-    def __init__(self, name: str = "#InTask"):
+class SourceNode(AsyncTask):
+    def __init__(self, name: str = "#SourceNode"):
         super().__init__(None, name=name)
 
     async def call(self, async_ctx: AsyncContext, env: Environment) -> list[AsyncContext]:
@@ -508,8 +508,8 @@ class InTask(AsyncTask):
         return [ctx.context for ctx in async_ret]
 
 
-class OutTask(AsyncTask):
-    def __init__(self, name: str = "#OutTask"):
+class SinkNode(AsyncTask):
+    def __init__(self, name: str = "#SinkNode"):
         super().__init__(None, name=name)
 
     async def call(self, async_ctx: AsyncContext, env: Environment) -> list[AsyncContext]:

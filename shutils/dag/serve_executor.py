@@ -17,11 +17,11 @@ from .runtime import Runtime
 from .context import Context, OutputContext, StopContext, LoopContext, RateLimitContext
 from .task import (
     TaskBase,
-    ForgroundTask,
+    ForegroundTask,
     AsyncTask,
     SyncTask,
     ShutdownTask,
-    AShutdownTask,
+    AsyncShutdownTask,
     Environment,
 )
 from .executor import Executor, ExecutorConfig, _worker_context_var
@@ -59,7 +59,7 @@ class ServeExecutor(Executor):
         for task in self.dag.tasks.values():
             if isinstance(task, ShutdownTask):
                 task.shutdown()
-            elif isinstance(task, AShutdownTask):
+            elif isinstance(task, AsyncShutdownTask):
                 await task.shutdown()
 
     @override

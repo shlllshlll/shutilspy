@@ -118,7 +118,7 @@ sync_ctx.destroy()
 
 #### 异步任务
 
-- `AsyncImmediateTask`: 简单异步任务，即传入context，对context进行一些处理，随后返回处理后的context
+- `AsyncFunctionTask`: 简单异步任务，即传入context，对context进行一些处理，随后返回处理后的context
 
   ```python
   async def process_data(async_ctx: AsyncContext) -> AsyncContext | list[AsyncContext] | None:
@@ -137,10 +137,10 @@ sync_ctx.destroy()
     # 处理完成返回当前context
     return async_ctx
 
-  task = dag.AsyncImmediateTask(process_data)
+  task = dag.AsyncFunctionTask(process_data)
   ```
 
-- `AsyncRouteTask`: 路由任务，根据输入context的某个字段值，决定将context发送到哪些下游任务处理，默认情况下，路由任务会将context发送到所有下游任务处理。
+- `AsyncRouterTask`: 路由任务，根据输入context的某个字段值，决定将context发送到哪些下游任务处理，默认情况下，路由任务会将context发送到所有下游任务处理。
 
   ```python
   async def route_task(async_ctx: AsyncContext) -> str | TaskBase | list[str | TaskBase]:
@@ -152,10 +152,10 @@ sync_ctx.destroy()
     else:
         return ["task1", "task2"]  # 发送到task1和task2处理
 
-  task = dag.AsyncRouteTask(route_task)
+  task = dag.AsyncRouterTask(route_task)
   ```
 
-- `AsyncGeneratorTask`: 异步生成器任务，即通过yield实现context的传入传出，用于需要在一个循环中处理context的场景
+- `AsyncStreamTask`: 异步生成器任务，即通过yield实现context的传入传出，用于需要在一个循环中处理context的场景
 
   ```python
   async def process_data_generator():
@@ -170,10 +170,10 @@ sync_ctx.destroy()
         # 传出当前context并接收下一个传入的context
         next_context = yield cur_context
 
-  task = dag.AsyncGeneratorTask(process_data_generator)
+  task = dag.AsyncStreamTask(process_data_generator)
   ```
 
-- `AsyncLoopTask`: 循环执行的异步任务，同样基于yield实现，不同的是，syncLoopTask仅在开始时接收一个输入context，在进入循环后，只进行context输出，不进行context输入。此类任务常用于dag中的起始的读取文件并生产context的任务，相比使用AsyncImmediateTask一次性读取文件生产所有的Context再送入dag框架，AsyncLoopTask可以更早的将context送入dag框架，同时dag的执行器被设计为优先处理已经在dag中运行的Context，因此AsyncLoopTask可以避免在dag中出现大量的context排队的问题。
+- `AsyncLoopTask`: 循环执行的异步任务，同样基于yield实现，不同的是，syncLoopTask仅在开始时接收一个输入context，在进入循环后，只进行context输出，不进行context输入。此类任务常用于dag中的起始的读取文件并生产context的任务，相比使用AsyncFunctionTask一次性读取文件生产所有的Context再送入dag框架，AsyncLoopTask可以更早的将context送入dag框架，同时dag的执行器被设计为优先处理已经在dag中运行的Context，因此AsyncLoopTask可以避免在dag中出现大量的context排队的问题。
 
   ```python
   async def loop_processor():
@@ -189,7 +189,7 @@ sync_ctx.destroy()
   task = dag.AsyncLoopTask(loop_processor)
   ```
 
-- `AsyncLongrunTask`: 长时间运行的异步任务，常用于诸如文件写入的场景，处理完一个context后，需要保持文件打开，等待下一个context的到来，直到所有context处理完成再关闭。
+- `AsyncServiceTask`: 长时间运行的异步任务，常用于诸如文件写入的场景，处理完一个context后，需要保持文件打开，等待下一个context的到来，直到所有context处理完成再关闭。
 
   ```python
   async def long_running_task(queue):
@@ -204,10 +204,10 @@ sync_ctx.destroy()
           # 处理完成，通过asyncio.Future将context返回dag框架
           future.set_result(async_ctx)
 
-  task = dag.AsyncLongrunTask(long_running_task)
+  task = dag.AsyncServiceTask(long_running_task)
   ```
 
-- `AsyncImmediateShutdownTask`: 异步关闭任务，用于需要在dag执行结束后执行的异步操作。
+- `AsyncFunctionShutdownTask`: 异步关闭任务，用于需要在dag执行结束后执行的异步操作。
 
   ```python
   class FileUpload():
@@ -218,13 +218,13 @@ sync_ctx.destroy()
     async def shutdown(self):
         await do_something()
 
-  async_shutdown_task = dag.AsyncImmediateShutdownTask(FileUpload())
+  async_shutdown_task = dag.AsyncFunctionShutdownTask(FileUpload())
   ```
 
 
 #### 同步任务
 
-- `SyncImmediateTask`: 立即执行的同步任务
+- `SyncFunctionTask`: 立即执行的同步任务
 
   ```python
   def process_data(context):
@@ -234,10 +234,10 @@ sync_ctx.destroy()
       context["key"] = new_data
       return context
 
-  task = dag.SyncImmediateTask(process_data)
+  task = dag.SyncFunctionTask(process_data)
   ```
 
-- `SyncImmediateShutdownTask`: 同步关闭任务，用于需要在dag执行结束后执行的同步操作。
+- `SyncFunctionShutdownTask`: 同步关闭任务，用于需要在dag执行结束后执行的同步操作。
 
   ```python
   class FileUpload():
@@ -248,7 +248,7 @@ sync_ctx.destroy()
     def shutdown(self):
         do_something()
 
-  sync_shutdown_task = dag.SyncImmediateShutdownTask(FileUpload())
+  sync_shutdown_task = dag.SyncFunctionShutdownTask(FileUpload())
   ```
 
 

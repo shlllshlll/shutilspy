@@ -9,15 +9,15 @@ Brief:
 
 from turtle import down
 from typing import Iterable
-from .task import TaskBase, InTask, OutTask
+from .task import TaskBase, SourceNode, SinkNode
 from ..rwlock import AsyncRWLock
 
 
 class DAG:
     def __init__(self):
         self.tasks: dict[str, TaskBase] = {}
-        self.in_task: InTask = InTask()
-        self.out_task: OutTask = OutTask()
+        self.in_task: SourceNode = SourceNode()
+        self.out_task: SinkNode = SinkNode()
         self.end_tasks: set[TaskBase] = set()
         self.start_tasks: set[TaskBase] = set()
         self._task_set: set[TaskBase] = set()
