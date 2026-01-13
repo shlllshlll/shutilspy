@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "shutilspy"
-version = "0.0.12"
+version = "0.1.0"
 authors = [
     {name = "shlll", email = "shlll7347@gmail.com"}
 ]

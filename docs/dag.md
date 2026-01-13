@@ -288,7 +288,6 @@ dag_graph.build()
 
 Executor 是 DAG 的任务执行器，在 dag 构建结束后，就可以通过 Executor 来执行任务了。
 
-
 ### 执行器参数
 
 Executor 的构造函数中第二个参数可以传入 `ExecutorConfig` 进行配置：
@@ -340,7 +339,6 @@ print(task_status)
 result = await executor.get_task_result(task_id)
 ```
 
-
 ## 可视化
 
 shutilspy 的 dag 模块提供了一个基于flask的dag可视化服务，可以通过如下的方式启动：
@@ -360,8 +358,19 @@ dag_graph.visualize(dag_graph, host="0.0.0.0", port=8088)
 
 ## TODO
 
-- [ ] ~~去除Executor中两级任务执行的设计，仅使用一级，简化执行逻辑~~
 - [x] 统一Context中各种同步、异步接口设计，取消需要先显示获取async_context和sync_context以及white_board的设计，统一通过context.xxx的方式访问，根据执行环境自动切换同步异步方式
 - [x] 通用的worker级别全局变量管理和全局资源管理器
 - [x] 新增支持服务模型的Executor，可以将dag中的task作为一个长期运行的服务，持续接收context进行处理
+- [x] 完善限流控制功能
+- [x] 完善错误重试处理机制
+- [x] 优化bypass功能
+- [x] 优化gc功能
+- [x] 放开父子Context的两级限制
+- [ ] 去除Executor中两级任务执行的设计，仅使用一级，简化执行逻辑
+- [ ] 将partial函数功能融入接口，简化功能实现
+- [ ] 优化锁实现方案
+- [ ] 支持子DAG嵌套
 - [ ] 调试和可视化功能增强，通过网页端可以查看context、task的任务执行情况，可以在执行task的时候，同步启动一个web服务，实时查看dag的执行情况
+- [ ] 强化潜在错误探测机制：
+
+  - [ ] 探测诸如：如在不动点和非不动点探测修改返回值的问题、父子context处理问题等

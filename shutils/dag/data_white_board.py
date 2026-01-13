@@ -10,7 +10,7 @@ Brief:
 from contextlib import asynccontextmanager, contextmanager
 import copy
 import logging
-from typing import Callable
+from typing import Callable, Any
 from ..rwlock import RWLock, AsyncRWLock
 
 
@@ -64,7 +64,6 @@ class SyncDataWhiteBoard:
         with self.__data_white_board._sync_lock.read():
             return len(self.__data_white_board._data)
 
-    @contextmanager
     def __iter__(self):
         with self.__data_white_board._sync_lock.read():
             yield from iter(self.__data_white_board._data)
@@ -81,22 +80,19 @@ class SyncDataWhiteBoard:
         with self.__data_white_board._sync_lock.write():
             self.__data_white_board._data.update(kwargs)
 
-    @contextmanager
     def keys(self):
         with self.__data_white_board._sync_lock.read():
             yield from self.__data_white_board._data.keys()
 
-    @contextmanager
     def values(self):
         with self.__data_white_board._sync_lock.read():
             yield from self.__data_white_board._data.values()
 
-    @contextmanager
     def items(self):
         with self.__data_white_board._sync_lock.read():
             yield from self.__data_white_board._data.items()
 
-    def get(self, key, default=None):
+    def get(self, key, default=None) -> Any:
         with self.__data_white_board._sync_lock.read():
             return self.__data_white_board._data.get(key, default)
 

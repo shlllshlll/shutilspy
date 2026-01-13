@@ -28,7 +28,7 @@ class PrioritizedItem:
     item: Context = field(compare=False)
 
 
-class ContextQueueMixin:
+class ContextQueue:
     def __init__(self):
         self._priority_queue: janus.PriorityQueue[PrioritizedItem] = janus.PriorityQueue()
         self._counter_dict: dict[ContextPriority, int] = {}
@@ -52,7 +52,7 @@ class ContextQueueMixin:
         return self._async_queue
     
 class SyncContextQueue:
-    def __init__(self, context_queue: ContextQueueMixin):
+    def __init__(self, context_queue: ContextQueue):
         self.__context_queue = context_queue
     
     def get(self) -> Context:
@@ -67,7 +67,7 @@ class SyncContextQueue:
                 self.__context_queue._counter_dict[priority] += 1
 
 class AsyncContextQueue:
-    def __init__(self, context_queue: ContextQueueMixin):
+    def __init__(self, context_queue: ContextQueue):
         self.__context_queue = context_queue
     
     async def get(self) -> Context:

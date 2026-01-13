@@ -12,7 +12,6 @@ import threading
 from typing import AsyncGenerator
 from contextlib import asynccontextmanager
 from .context import Context, StopContext
-from .context_queue import ContextQueueMixin
 
 
 class RuntimeCounterMixin:
@@ -68,18 +67,6 @@ class AsyncRuntimeCounter:
                 self.__runtime_counter._context_counter -= 1
 
 
-class Runtime(ContextQueueMixin, RuntimeCounterMixin):
+class Runtime(RuntimeCounterMixin):
     def __init__(self):
-        ContextQueueMixin.__init__(self)
         RuntimeCounterMixin.__init__(self)
-
-    @asynccontextmanager
-    async def check_get_context(self, timeout: float | None = None, use_counter: bool = True) -> AsyncGenerator[Context, None]:
-        counter = self.counter
-        if not use_counter or counter > 0:
-            async with asyncio.timeout(timeout):
-                async with self.async_queue._get_with_context() as context:
-                    pass
-            yield context
-        else:
-            yield StopContext()

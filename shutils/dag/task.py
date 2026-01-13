@@ -19,7 +19,7 @@ from typing import Any, Callable, Generator, Coroutine, AsyncGenerator, Iterable
 import queue
 from .context import Context, AsyncContext, SyncContext, StopContext, LoopContext, OutputContext, RateLimitContext
 from .runtime import Runtime
-from ..rate_limiter import RateLimiter
+from .limiter import Limiter
 
 if TYPE_CHECKING:
     from .dag import DAG
@@ -49,9 +49,7 @@ class TaskConfig:
     retry_times: int = 0
     retry_interval: int | float | Callable[[Context], float | int] = 0
     parallel_num: int = 0
-    calls: int = 0
-    period: int = 1
-
+    limiter: Limiter | None = None
 
 class TaskBase(ABC):
     def __init__(self, func: Callable | None, config: TaskConfig = TaskConfig(), name: str = ""):
@@ -60,10 +58,7 @@ class TaskBase(ABC):
         self.downstream_tasks: set[TaskBase] = set()
         self.config = config
         self.running_task_num = 0
-        if self.config.calls > 0 and self.config.period > 0:
-            self.rate_limiter = RateLimiter(self.config.calls, self.config.period)
-        else:
-            self.rate_limiter = None
+        self.rate_limiter = self.config.limiter
 
     def add_upstream(self, task: "TaskBase"):
         self.upstream_tasks.add(task)
@@ -76,7 +71,8 @@ class TaskBase(ABC):
         self.running_task_num += 1
 
         # qps control
-        if self.rate_limiter is not None and not self.rate_limiter.allow():
+        if self.rate_limiter is not None and not self.rate_limiter.try_acquire().success:
+            logger.info(f"[Task {self.id}]: rate limit exceeded, throttling...")
             return RateLimitContext(context)
 
         return None
@@ -87,7 +83,9 @@ class TaskBase(ABC):
     def __hash__(self):
         return hash(self.id)
 
-    def __eq__(self, other: "TaskBase"):
+    def __eq__(self, other: object):
+        if not isinstance(other, TaskBase):
+            return False
         return self.id == other.id
 
     def __repr__(self):
@@ -518,7 +516,7 @@ class SinkNode(AsyncTask):
         else:
             output_context = OutputContext()
             await output_context.acopy(async_ctx.context)
-            await async_ctx.destory()
+            await async_ctx.destory(destory_parent=True)
             return [output_context.async_context]
 
     async def __call__(self, context: Context, env: Environment) -> list[Context]:

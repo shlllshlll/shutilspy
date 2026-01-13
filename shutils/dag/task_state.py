@@ -90,7 +90,7 @@ class SyncTaskState:
     def __init__(self, task_state: TaskStateMixin):
         self.__task_state = task_state
 
-    def complete(self, task: "TaskBase"):
+    def _complete(self, task: "TaskBase"):
         with self.__task_state._task_lock.write():
             self.__task_state._complete(task)
 
@@ -112,8 +112,8 @@ class AsyncTaskState:
         async with self.__task_state._task_alock.write():
             return func(*args, **kwargs)
 
-    def complete(self, task: "TaskBase"):
-        return self.write_wrapper(self.__task_state.sync_task_state.complete, task)
+    def _complete(self, task: "TaskBase"):
+        return self.write_wrapper(self.__task_state.sync_task_state._complete, task)
 
     def avaliable_task(self):
         return self.read_wrapper(self.__task_state.sync_task_state.avaliable_task)

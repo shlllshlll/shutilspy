@@ -121,7 +121,8 @@ class DAG:
     def _get_bypass_tasks(self, task_list: TaskBase | Iterable[TaskBase]) -> set[TaskBase]:
         """get all bypass tasks for a task"""
         downstream_tasks = self._get_all_downstream_tasks(task_list)
+        task_set = set(task_list) if isinstance(task_list, Iterable) else {task_list}
         bypass_tasks = (
-            self._task_set - downstream_tasks - self._get_all_upstream_tasks(task_list)
+            self._task_set - downstream_tasks - self._get_all_upstream_tasks(task_list) - task_set
         )
         return bypass_tasks

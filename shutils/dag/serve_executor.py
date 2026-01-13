@@ -67,7 +67,7 @@ class ServeExecutor(Executor):
         worker_storage = {}
         while True:
             try:
-                async with self.runtime.check_get_context(self._config.context_queue_timeout, False) as in_context:
+                async with self.check_get_context(self._config.context_queue_timeout, False) as in_context:
                     logger.debug(f"[Worker{idx}]: get context[{in_context}] from async queue done")
                     if isinstance(in_context, StopContext):
                         logger.error(f"[Worker{idx}]: get unexpected StopContext, ServeExecutor will not stop, please check your code, skip")
@@ -115,11 +115,11 @@ class ServeExecutor(Executor):
                             self.context_result_trackers[out_context.id].set_result(out_context.asdit())
                     else:
                         if out_context == in_context:
-                            await self.runtime.async_queue.put(out_context, ContextPriority.LIFO)
+                            await self._context_queue.async_queue.put(out_context, ContextPriority.LIFO)
                         elif isinstance(out_context, LoopContext):
-                            await self.runtime.async_queue.put(out_context, ContextPriority.FIFO_LOW)
+                            await self._context_queue.async_queue.put(out_context, ContextPriority.FIFO_LOW)
                         else:
-                            await self.runtime.async_queue.put(out_context, ContextPriority.FIFO_HIGH)
+                            await self._context_queue.async_queue.put(out_context, ContextPriority.FIFO_HIGH)
             except asyncio.TimeoutError:
                 logger.debug(f"[Worker{idx}]: context queue get timeout, skip")
                 continue
@@ -134,8 +134,8 @@ class ServeExecutor(Executor):
             future = asyncio.Future()
             self.context_result_trackers[context.id] = future
 
-        await context.async_task_state.complete(self.dag.in_task)
-        await self.runtime.async_queue.put(context, ContextPriority.FIFO_HIGH)
+        await context.async_context.complete(self.dag.in_task)
+        await self._context_queue.async_queue.put(context, ContextPriority.FIFO_HIGH)
         return context.id
 
     async def get_task_status(self, task_id: str):
