@@ -1,40 +1,78 @@
-#!/usr/bin/env python3
-# -*- coding:utf-8 -*-
-"""
-File: param.py
-Author: shlll(shlll7347@gmail.com)
-Modified By: shlll(shlll7347@gmail.com)
-Brief:
-"""
+"""Dataclass serialization utilities with support for hidden fields and type coercion."""
 
-import json
 import importlib
-from dataclasses import is_dataclass, fields
-from types import UnionType
-from typing import Any, ForwardRef, TypeVar, Union, Dict, get_origin, get_args, get_type_hints, Type
+import json
+from dataclasses import fields, is_dataclass
 from enum import Enum
+from types import UnionType
+from typing import Any, ForwardRef, TypeVar, Union, get_args, get_origin, get_type_hints
+
+__all__ = [
+    "HIDE",
+    "Hidden",
+    "Hide",
+    "OptionHidden",
+    "ParamMixin",
+    "asdict",
+    "asjson",
+    "deref_forwardref",
+    "deref_typestr",
+    "dict_to_dataclass",
+    "json_serializer",
+]
 
 
 class Hide:
-    pass
+    """Sentinel value to mark fields as hidden during serialization."""
+    def __repr__(self) -> str:
+        return "<HIDE>"
 
 
 HIDE = Hide()
 
 T = TypeVar("T")
-Hidden = Union[T, Hide]
-OptionHidden = Union[T, Hide, None]
+Hidden = T | Hide
+OptionHidden = T | Hide | None
+
 
 def json_serializer(obj: Any) -> Any:
+    """JSON serializer that handles Enum values.
+
+    Args:
+        obj: Object to serialize.
+
+    Returns:
+        The enum's value.
+
+    Raises:
+        TypeError: If obj is not an Enum.
+    """
     if isinstance(obj, Enum):
         return obj.value
     raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")
 
 class ParamMixin:
+    """Mixin for dataclasses that provides JSON string serialization."""
+
     def to_json_str(self):
+        """Serialize the dataclass to a JSON string.
+
+        Returns:
+            A JSON string representation of the dataclass.
+        """
         return json.dumps(obj=asdict(self), ensure_ascii=False, default=json_serializer)
 
+
 def deref_forwardref(forward_ref: ForwardRef, module_name: str) -> Any:
+    """Resolve a ForwardRef to its actual type.
+
+    Args:
+        forward_ref: The ForwardRef to resolve.
+        module_name: The module name to resolve in.
+
+    Returns:
+        The resolved type.
+    """
     def tmp() -> forward_ref:
         ...
 
@@ -42,6 +80,15 @@ def deref_forwardref(forward_ref: ForwardRef, module_name: str) -> Any:
     return res
 
 def deref_typestr(type_str: str, module_name: str) -> Any:
+    """Resolve a dotted type string to its actual type.
+
+    Args:
+        type_str: Dotted path like "module.ClassName".
+        module_name: The base module to import from.
+
+    Returns:
+        The resolved type.
+    """
     module = importlib.import_module(module_name)
     parts = type_str.split(".")
     obj = module
@@ -50,9 +97,34 @@ def deref_typestr(type_str: str, module_name: str) -> Any:
     return obj
 
 def asjson(obj: Any, skip_private: bool = False, *args, **kwargs) -> str:
-    return json.dumps(obj=asdict(obj, skip_private), *args, default=json_serializer, **kwargs)
+    """Serialize a dataclass to a JSON string.
+
+    Args:
+        obj: The dataclass instance to serialize.
+        skip_private: If True, skip fields starting with underscore.
+        *args: Extra positional arguments forwarded to ``json.dumps``.
+        **kwargs: Extra keyword arguments forwarded to ``json.dumps``.
+
+    Returns:
+        A JSON string representation of the dataclass.
+    """
+    return json.dumps(asdict(obj, skip_private), *args, default=json_serializer, **kwargs)
 
 def asdict(obj: Any, skip_private: bool = False) -> dict:
+    """Convert a dataclass to a dict, handling nested dataclasses, enums, and Hide fields.
+
+    Fields whose value is an instance of ``Hide`` are omitted from the output.
+
+    Args:
+        obj: The dataclass instance to convert.
+        skip_private: If True, skip fields whose names start with underscore.
+
+    Returns:
+        A dictionary representation of the dataclass.
+
+    Raises:
+        ValueError: If obj is not a dataclass.
+    """
     def asdict_internal(obj: Any) -> Any:
         if not is_dataclass(obj):
             if isinstance(obj, (list, tuple, set)):
@@ -89,17 +161,29 @@ def asdict(obj: Any, skip_private: bool = False) -> dict:
     return asdict_internal(obj)
 
 
-def dict_to_dataclass(data: Dict[str, Any], cls: Type[T]) -> T:
+def dict_to_dataclass[T](data: dict[str, Any], cls: type[T]) -> T:
+    """Convert a dictionary to a dataclass instance with type coercion.
+
+    Handles ForwardRef resolution, Union types, nested dataclasses,
+    enums, and generic containers (list, dict, tuple).
+
+    Args:
+        data: Dictionary with field values.
+        cls: The target dataclass type.
+
+    Returns:
+        An instance of ``cls`` populated from ``data``.
+    """
     def process_value(field_type: Any, value: Any, strict: bool = False) -> Any:
         if isinstance(field_type, ForwardRef):
             field_type = deref_forwardref(field_type, cls.__module__)
-        elif type(field_type) == str:
+        elif isinstance(field_type, str):
             field_type = deref_typestr(field_type, cls.__module__)
 
         origin = get_origin(field_type)
         args = get_args(field_type)
 
-        if origin == Union or origin == UnionType:
+        if origin in (Union, UnionType):
             for item_type in args:
                 try:
                     return process_value(item_type, value, strict=True)
@@ -111,20 +195,20 @@ def dict_to_dataclass(data: Dict[str, Any], cls: Type[T]) -> T:
                 except Exception:
                     continue
             raise ValueError(f"Convert value[{value}] to type[{field_type}] failed")
-        elif origin == list:
+        elif origin is list:
             arg_type = args[0]
             result = []
             for item in value:
                 result.append(process_value(arg_type, item))
             return result
-        elif origin == dict:
+        elif origin is dict:
             key_type = args[0]
             value_type = args[1]
             result = {}
             for k, v in value.items():
                 result[process_value(key_type, k)] = process_value(value_type, v)
             return result
-        elif origin == tuple:
+        elif origin is tuple:
             result = []
 
             if len(args) != len(value):
@@ -132,7 +216,7 @@ def dict_to_dataclass(data: Dict[str, Any], cls: Type[T]) -> T:
                     f"Tuple length mismatch: expected {len(args)}, got {len(value)}"
                 )
 
-            for arg_type, arg_item in zip(args, value):
+            for arg_type, arg_item in zip(args, value, strict=False):
                 result.append(process_value(arg_type, arg_item))
             return tuple(result)
         else:
@@ -143,7 +227,7 @@ def dict_to_dataclass(data: Dict[str, Any], cls: Type[T]) -> T:
             elif field_type == Any:
                 return value
             else:
-                if type(value) == field_type or isinstance(value, field_type):
+                if isinstance(value, field_type):
                     return value
                 else:
                     if strict:

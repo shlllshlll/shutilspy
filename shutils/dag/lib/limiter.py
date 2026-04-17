@@ -1,14 +1,20 @@
-#!/usr/bin/env python3
-# -*- coding:utf-8 -*-
+"""Rate limiting with QPS, concurrency, and token-bucket strategies."""
 
-import time
-import threading
-import queue
 import asyncio
-from enum import Enum
-from dataclasses import dataclass
-from typing import overload, Literal
+import contextlib
+import queue
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
+from enum import Enum
+from typing import Literal, overload
+
+__all__ = [
+    "AcquireResult",
+    "Limiter",
+    "LimiterType",
+]
 
 # --- Python 3.12+ Type Alias Syntax ---
 type ServiceName = str
@@ -21,21 +27,27 @@ type TokenBucketConfig = list[ServiceName]
 type LimiterConfig = QPSConfig | ConcurrencyConfig | TokenBucketConfig
 
 class LimiterType(Enum):
+    """Supported limiter strategy types."""
+
     QPS = "qps"
     CONCURRENCY = "concurrency"
     TOKEN_BUCKET = "token_bucket"
 
 @dataclass(slots=True)
 class AcquireResult:
-    """
-    限流器获取结果
+    """Result of a rate-limit acquire attempt.
+
+    Attributes:
+        success: Whether the acquire succeeded.
+        data: For token-bucket mode, the acquired service name.
     """
     success: bool
     data: ServiceName | None = None
 
 class Limiter:
-    """
-    全能限流器：支持 Sync/Async，支持 阻塞/非阻塞
+    """Universal rate limiter supporting QPS, concurrency, and token-bucket strategies.
+
+    Supports both sync and async, blocking and non-blocking acquire modes.
     """
 
     @overload
@@ -46,6 +58,16 @@ class Limiter:
     def __init__(self, limiter_type: Literal[LimiterType.TOKEN_BUCKET], rate: TokenBucketConfig): ...
 
     def __init__(self, limiter_type: LimiterType, rate: LimiterConfig):
+        """Initialize the limiter with a strategy type and rate config.
+
+        Args:
+            limiter_type: The limiting strategy.
+            rate: QPS limit (int or (period, limit)), max concurrency (int),
+                  or token bucket service list.
+
+        Raises:
+            ValueError: If the configuration is invalid for the given type.
+        """
         self.type = limiter_type
         # 升级 Lock 为 Condition，用于并发模式下的等待通知
         self._cond = threading.Condition()
@@ -78,7 +100,7 @@ class Limiter:
     # 1. 非阻塞接口 (Non-Blocking / Fail-Fast)
     # ----------------------------------------------------------------
     def try_acquire(self) -> AcquireResult:
-        """尝试立即获取，失败则立即返回 False"""
+        """Non-blocking acquire; returns immediately with success or failure."""
         match self.type:
             case LimiterType.QPS:
                 return self._try_acquire_qps()
@@ -93,8 +115,13 @@ class Limiter:
     # 2. 同步阻塞接口 (Blocking Sync)
     # ----------------------------------------------------------------
     def acquire(self, timeout: float | None = None) -> AcquireResult:
-        """
-        阻塞直到获取成功或超时
+        """Blocking acquire that waits until success or timeout.
+
+        Args:
+            timeout: Maximum seconds to wait, or None for infinite wait.
+
+        Returns:
+            AcquireResult indicating success or failure.
         """
         start_time = time.monotonic()
 
@@ -116,7 +143,8 @@ class Limiter:
                     if timeout is not None:
                         remaining = timeout - (time.monotonic() - start_time)
                         wait_time = min(wait_time, remaining)
-                        if wait_time <= 0: return AcquireResult(False)
+                        if wait_time <= 0:
+                            return AcquireResult(False)
 
                     time.sleep(wait_time)
 
@@ -145,8 +173,13 @@ class Limiter:
     # 3. 异步阻塞接口 (Blocking Async)
     # ----------------------------------------------------------------
     async def acquire_async(self, timeout: float | None = None) -> AcquireResult:
-        """
-        Async 友好的阻塞获取
+        """Async-friendly blocking acquire.
+
+        Args:
+            timeout: Maximum seconds to wait, or None for infinite wait.
+
+        Returns:
+            AcquireResult indicating success or failure.
         """
         start_time = time.monotonic()
 
@@ -165,7 +198,8 @@ class Limiter:
                     if timeout is not None:
                         remaining = timeout - (time.monotonic() - start_time)
                         wait_time = min(wait_time, remaining)
-                        if wait_time <= 0: return AcquireResult(False)
+                        if wait_time <= 0:
+                            return AcquireResult(False)
 
                     await asyncio.sleep(wait_time)
 
@@ -185,6 +219,15 @@ class Limiter:
     # 释放逻辑
     # ----------------------------------------------------------------
     def release(self, data: ServiceName | None = None) -> None:
+        """Release a previously acquired resource.
+
+        For concurrency mode, decrements the counter.
+        For token-bucket mode, returns the service name to the pool.
+        QPS mode does not require release.
+
+        Args:
+            data: The service name to return (token-bucket mode only).
+        """
         match self.type:
             case LimiterType.CONCURRENCY:
                 with self._cond:
@@ -201,11 +244,12 @@ class Limiter:
     # 内部实现 (Internal Strategies)
     # ----------------------------------------------------------------
     def _calc_qps_wait_time(self) -> float:
-        """计算还需要多久才能产生下一个令牌"""
+        """Calculate how long until the next QPS token is available."""
         with self._cond: # 使用 cond 作为 lock
             # 当前亏空多少令牌才能达到 1.0
             needed = 1.0 - self.tokens
-            if needed <= 0: return 0.0
+            if needed <= 0:
+                return 0.0
             return needed / self.tokens_per_sec
 
     def _try_acquire_qps(self) -> AcquireResult:
@@ -287,7 +331,5 @@ async def main():
     print(f"Got again: {res3.data}") # DB-1
 
 if __name__ == "__main__":
-    try:
+    with contextlib.suppress(KeyboardInterrupt):
         asyncio.run(main())
-    except KeyboardInterrupt:
-        pass

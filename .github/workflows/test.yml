@@ -1,0 +1,29 @@
+name: Test
+
+on:
+  push:
+    branches: [master, dev]
+  pull_request:
+    branches: [master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pixi
+        uses: prefix-dev/setup-pixi@v0.8.1
+
+      - name: Install dependencies
+        run: pixi install
+
+      - name: Lint
+        run: pixi run -e dev lint
+
+      - name: Test
+        run: pixi run -e dev test

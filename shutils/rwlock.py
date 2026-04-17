@@ -1,51 +1,59 @@
-#!/usr/bin/env python3
-# -*- coding:utf-8 -*-
-"""
-File: rwlock.py
-Author: shlll(shlll7347@gmail.com)
-Modified By: shlll(shlll7347@gmail.com)
-Brief:
-"""
+"""Read-write locks for both synchronous and asynchronous contexts."""
 
-import threading
 import asyncio
+import threading
+
+__all__ = [
+    "AsyncRWLock",
+    "RWLock",
+]
 
 
-class RWLock(object):
+class RWLock:
+    """A thread-safe read-write lock allowing concurrent reads or exclusive writes.
+
+    Multiple readers can hold the lock simultaneously, but a writer requires
+    exclusive access.
+    """
+
     def __init__(self):
         self._read_ready = threading.Condition(threading.Lock())
         self._readers = 0
 
     def read(self):
-        """返回一个上下文管理器用于获取和释放读锁。"""
+        """Return a context manager for acquiring and releasing the read lock."""
         return self.ReadLock(self)
 
     def write(self):
-        """返回一个上下文管理器用于获取和释放写锁。"""
+        """Return a context manager for acquiring and releasing the write lock."""
         return self.WriteLock(self)
 
     class ReadLock:
+        """Context manager that acquires/releases a read lock."""
+
         def __init__(self, rwlock):
             self.rwlock = rwlock
 
         def __enter__(self):
-            """进入上下文时自动获取读锁。"""
+            """Acquire the read lock on entering the context."""
             self.rwlock._acquire_read()
 
         def __exit__(self, exc_type, exc_val, exc_tb):
-            """退出上下文时自动释放读锁。"""
+            """Release the read lock on exiting the context."""
             self.rwlock._release_read()
 
     class WriteLock:
+        """Context manager that acquires/releases a write lock."""
+
         def __init__(self, rwlock):
             self.rwlock = rwlock
 
         def __enter__(self):
-            """进入上下文时自动获取写锁。"""
+            """Acquire the write lock on entering the context."""
             self.rwlock._acquire_write()
 
         def __exit__(self, exc_type, exc_val, exc_tb):
-            """退出上下文时自动释放写锁。"""
+            """Release the write lock on exiting the context."""
             self.rwlock._release_write()
 
     def _acquire_read(self):
@@ -68,40 +76,49 @@ class RWLock(object):
 
 
 class AsyncRWLock:
+    """An async read-write lock allowing concurrent reads or exclusive writes.
+
+    Uses ``asyncio.Condition`` for coroutine-safe synchronization.
+    """
+
     def __init__(self):
         self._read_ready = asyncio.Condition()
         self._readers = 0
 
     def read(self):
-        """返回一个上下文管理器用于获取和释放读锁。"""
+        """Return an async context manager for acquiring and releasing the read lock."""
         return self.ReadLock(self)
 
     def write(self):
-        """返回一个上下文管理器用于获取和释放写锁。"""
+        """Return an async context manager for acquiring and releasing the write lock."""
         return self.WriteLock(self)
 
     class ReadLock:
+        """Async context manager that acquires/releases a read lock."""
+
         def __init__(self, rwlock):
             self.rwlock = rwlock
 
         async def __aenter__(self):
-            """进入上下文时自动获取读锁。"""
+            """Acquire the read lock on entering the context."""
             await self.rwlock._acquire_read()
 
         async def __aexit__(self, exc_type, exc_val, exc_tb):
-            """退出上下文时自动释放读锁。"""
+            """Release the read lock on exiting the context."""
             await self.rwlock._release_read()
 
     class WriteLock:
+        """Async context manager that acquires/releases a write lock."""
+
         def __init__(self, rwlock):
             self.rwlock = rwlock
 
         async def __aenter__(self):
-            """进入上下文时自动获取写锁。"""
+            """Acquire the write lock on entering the context."""
             await self.rwlock._acquire_write()
 
         async def __aexit__(self, exc_type, exc_val, exc_tb):
-            """退出上下文时自动释放写锁。"""
+            """Release the write lock on exiting the context."""
             await self.rwlock._release_write()
 
     async def _acquire_read(self):

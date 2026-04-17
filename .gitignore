@@ -6,6 +6,15 @@ log/
 __pycache__/
 *.ipynb
 conf/conf.yml# pixi environments
-.pixi/*
+.pixi/
 !.pixi/config.toml
 output/
+.coverage
+htmlcov/
+coverage.xml
+site/
+.ruff_cache/
+.pytest_cache/
+.*cc/
+.claude/
+*.pyc

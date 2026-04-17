@@ -1,52 +1,51 @@
-#!/usr/bin/env python3
-# -*- coding:utf-8 -*-
-"""
-File: cache.py
-Author: shlll(shlll7347@gmail.com)
-Modified By: shlll(shlll7347@gmail.com)
-Brief:
-"""
+"""DAG executor with context-based worker pool for async task execution."""
 
-import time
-from dataclasses import dataclass
-import contextvars
-import traceback
-import logging
-from typing import Any
-from typing import Coroutine, Iterable, AsyncGenerator
 import asyncio
+import contextvars
+import logging
+import time
+import traceback
+from collections.abc import AsyncGenerator, Coroutine, Iterable
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from contextlib import asynccontextmanager
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
-from .runtime import Runtime
-from .dag import DAG
-from .task import (
-    TaskBase,
-    ForegroundTask,
-    AsyncTask,
-    SyncTask,
-    ShutdownTask,
-    AsyncShutdownTask,
-    Environment,
-)
-from .context_queue import ContextQueue
-from .context import Context, OutputContext, StopContext, LoopContext, RateLimitContext
-from .task_state import ErrorInfo
-from .context_queue import ContextPriority
+from dataclasses import dataclass
+from typing import Any
 
+from .context import Context, LoopContext, OutputContext, RateLimitContext, StopContext
+from .context_queue import ContextPriority, ContextQueue
+from .dag import DAG
+from .runtime import Runtime
+from .task import (
+    AsyncShutdownTask,
+    AsyncTask,
+    Environment,
+    ForegroundTask,
+    ShutdownTask,
+    SyncTask,
+    TaskBase,
+)
+from .task_state import ErrorInfo
+
+__all__ = [
+    "Executor",
+    "ExecutorConfig",
+    "WorkerLocalProxy",
+    "worker_local",
+]
 
 logger = logging.getLogger(__name__)
 _worker_context_var: contextvars.ContextVar[dict[Any, Any]] = contextvars.ContextVar("worker_context")
 
 class WorkerLocalProxy:
+    """Thread-local-like proxy backed by a contextvars.ContextVar."""
+
     def __getattr__(self, name: str):
         try:
             # 获取当前上下文中的 worker 存储，然后从该存储中获取属性
             # Get the worker storage from the current context, then get the attribute from it
             return _worker_context_var.get()[name]
         except (LookupError, KeyError):
-            # 如果 contextvar 未设置或属性不存在，则引发 AttributeError
-            # This makes it behave like a normal object
-            raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
+            raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'") from None
 
     def __setattr__(self, name: str, value: Any):
         try:
@@ -56,14 +55,14 @@ class WorkerLocalProxy:
         except LookupError:
             raise RuntimeError(
                 "Cannot set attribute on worker_local outside of a running worker context."
-            )
+            ) from None
 
     def __delattr__(self, name: str):
         try:
             # 删除属性
             del _worker_context_var.get()[name]
         except (LookupError, KeyError):
-            raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
+            raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'") from None
 
     def __contains__(self, item: str) -> bool:
         try:
@@ -74,6 +73,18 @@ worker_local = WorkerLocalProxy()
 
 @dataclass
 class ExecutorConfig:
+    """Configuration for the DAG executor.
+
+    Attributes:
+        context_worker_num: Number of worker coroutines for processing contexts.
+        task_worker_num: Max concurrent tasks per context (0 means unlimited).
+        context_queue_timeout: Seconds to wait for a context before timing out.
+        thread_pool_worker_num: Thread pool size for sync tasks (0 disables).
+        process_pool_worker_num: Process pool size for process tasks (0 disables).
+        enable_context_gc: Whether to garbage-collect orphaned contexts.
+        enable_context_bypass: Whether to auto-skip bypass tasks for new contexts.
+        worker_idle_times: Number of consecutive idle checks before stopping all workers.
+    """
     context_worker_num: int = 1
     task_worker_num: int = 1
     context_queue_timeout: float | None = 1
@@ -84,12 +95,23 @@ class ExecutorConfig:
     worker_idle_times: int = 20
 
 class Executor:
+    """Async DAG executor with context-based worker pool."""
+
     def __init__(
         self,
         dag: DAG,
         runtime: Runtime | None = None,
-        config: ExecutorConfig = ExecutorConfig(),
+        config: ExecutorConfig | None = None,
     ):
+        """Initialize the executor.
+
+        Args:
+            dag: The DAG to execute.
+            runtime: Optional runtime for tracking active contexts.
+            config: Executor configuration.
+        """
+        if config is None:
+            config = ExecutorConfig()
         if runtime is None:
             self.runtime = Runtime()
         else:
@@ -109,6 +131,14 @@ class Executor:
         self._context_queue = ContextQueue()
 
     async def run(self, input_context: Context | list[Context] | None = None) -> list[OutputContext]:
+        """Execute the DAG with given input contexts and return outputs.
+
+        Args:
+            input_context: Single context, list of contexts, or None for a default context.
+
+        Returns:
+            List of output contexts from the DAG sink node.
+        """
         if input_context is None:
             input_context = [Context(self.runtime)]
         elif isinstance(input_context, Context):
@@ -122,10 +152,13 @@ class Executor:
         for context in input_context:
             await context.async_context.complete(self.dag.in_task)
             await self._context_queue.async_queue.put(context)
-        logger.info(f"[Executor.run]: put input context to async queue done")
+        logger.info("[Executor.run]: put input context to async queue done")
 
         env = Environment(self.runtime, self._process_pool, self.dag)
-        worker_tasks = [asyncio.create_task(self._worker_loop(idx, env)) for idx in range(self._config.context_worker_num)]
+        worker_tasks = [
+            asyncio.create_task(self._worker_loop(idx, env))
+            for idx in range(self._config.context_worker_num)
+        ]
         output = await asyncio.gather(*worker_tasks)
         output_context = []
         for output_context_list in output:
@@ -177,7 +210,10 @@ class Executor:
                     else:
                         interval = task.config.retry_interval
                     in_context._awake_interval(interval, task)
-                logger.warning(f"[Worker{idx}-{sub_idx}]: {in_context} running {task} failed, retrying... error: {type(e).__name__}: {e}")
+                logger.warning(
+                    f"[Worker{idx}-{sub_idx}]: {in_context} running {task} failed, "
+                    f"retrying... error: {type(e).__name__}: {e}"
+                )
                 traceback.print_exc()
                 await self._context_queue.async_queue.put(in_context)
                 return [], False
@@ -187,7 +223,7 @@ class Executor:
             await in_context.async_context.destory()
 
         for idx, out_context in enumerate(context_list):
-            if isinstance(out_context, LoopContext) is False and isinstance(out_context, RateLimitContext) is False:
+            if not isinstance(out_context, LoopContext) and not isinstance(out_context, RateLimitContext):
                 await out_context.async_context.complete(task)
             if isinstance(out_context, RateLimitContext):
                 context_list[idx] = out_context.context
@@ -195,7 +231,15 @@ class Executor:
         return context_list, True
 
     @asynccontextmanager
-    async def check_get_context(self, timeout: float | None = None, use_counter: bool = True) -> AsyncGenerator[Context, None]:
+    async def check_get_context(
+        self, timeout: float | None = None, use_counter: bool = True
+    ) -> AsyncGenerator[Context]:
+        """Context manager that gets a context from the queue with optional timeout.
+
+        Args:
+            timeout: Seconds to wait for a context.
+            use_counter: Whether to check the runtime counter for StopContext.
+        """
         counter = self.runtime.counter
         if not use_counter or counter > 0:
             async with asyncio.timeout(timeout):
@@ -207,6 +251,7 @@ class Executor:
 
     @staticmethod
     async def _async_limit(semaphore: asyncio.Semaphore, coro: Coroutine):
+        """Run a coroutine under a semaphore for concurrency limiting."""
         async with semaphore:
             return await coro
 
@@ -244,7 +289,7 @@ class Executor:
 
                 context_list = []
                 avaliable_task_set = set(avaliable_tasks)
-                for task, (task_context_list, succeed) in zip(avaliable_tasks, task_results):
+                for task, (task_context_list, succeed) in zip(avaliable_tasks, task_results, strict=True):
                     context_list.extend(task_context_list)
                     if not succeed:
                         avaliable_task_set.discard(task)
@@ -252,7 +297,17 @@ class Executor:
                 if len(tasks) > 1:
                     # need deduplicate
                     context_list = list(set(context_list))
-                logger.debug(f"[Worker{idx}]: {in_context} run tasks done, out[{context_list}], tasks[{avaliable_tasks}]")
+                filted_context_list = []
+                for context in context_list:
+                    if context.freezing:
+                        logger.debug(f"{context} is freezing, skip")
+                        continue
+                    filted_context_list.append(context)
+                context_list = filted_context_list
+                logger.debug(
+                    f"[Worker{idx}]: {in_context} run tasks done, "
+                    f"out[{context_list}], tasks[{avaliable_tasks}]"
+                )
                 if avaliable_tasks:
                     await self._context_postprocess(in_context, context_list, avaliable_tasks)
                 for out_context in context_list:
@@ -265,13 +320,16 @@ class Executor:
                             await self._context_queue.async_queue.put(out_context, ContextPriority.FIFO_LOW)
                         else:
                             await self._context_queue.async_queue.put(out_context, ContextPriority.FIFO_HIGH)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 logger.debug(f"[Worker{idx}]: context queue get timeout, skip")
                 self._worker_idle[idx] = True
                 if all(self._worker_idle.values()):
                     idle_count += 1
                     if idle_count >= self._config.worker_idle_times:
-                        logger.error(f"[Worker{idx}]: all workers idle for {idle_count} times, break! Please check whether there are deadlock tasks in the DAG!")
+                        logger.error(
+                            f"[Worker{idx}]: all workers idle for {idle_count} times, break! "
+                            "Please check whether there are deadlock tasks in the DAG!"
+                        )
                         break
                 continue
         return output_context
@@ -299,11 +357,11 @@ class Executor:
                     out_context_set.add(parent_context.context)
                     parent_context = await parent_context.parent_context()
                 # collect child contexts
-                child_context = context.async_context
-                while await child_context.child_context_num():
-                    async for child_context in child_context.iter_child_context():
-                        if not child_context.context.is_destory():
-                            out_context_set.add(child_context.context)
+                child_wrapper = context.async_context
+                while await child_wrapper.child_context_num():
+                    async for child_ctx in child_wrapper.iter_child_context():
+                        if not child_ctx.context.is_destory():
+                            out_context_set.add(child_ctx.context)
 
             # contexts that are in input context but not in output context should be destoryed
             destory_context_set = in_context_set - out_context_set
@@ -320,11 +378,11 @@ class Executor:
                     in_context_set.add(parent_context.context)
                     parent_context = await parent_context.parent_context()
                 # collect child contexts
-                child_context = context.async_context
-                while await child_context.child_context_num():
-                    async for child_context in child_context.iter_child_context():
-                        if not child_context.context.is_destory():
-                            in_context_set.add(child_context.context)
+                child_iter = context.async_context
+                while await child_iter.child_context_num():
+                    async for child_ctx in child_iter.iter_child_context():
+                        if not child_ctx.context.is_destory():
+                            in_context_set.add(child_ctx.context)
 
             # contexts that are in output context but not in input context should mask it's bypass tasks
             new_context_set = out_context_set - in_context_set

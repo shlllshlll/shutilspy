@@ -1,22 +1,19 @@
-#!/usr/bin/env python3
-# -*- coding:utf-8 -*-
-"""
-File: task_queue.py
-Author: shlll(shlll7347@gmail.com)
-Modified By: shlll(shlll7347@gmail.com)
-Brief: [WIP] Task-based priority queue for SimplifiedExecutor
-"""
+"""Task-based priority queue for single-level DAG executor scheduling."""
 
-from dataclasses import dataclass, field
 import logging
+from dataclasses import dataclass, field
 from enum import Enum
-import threading
-import asyncio
-import janus
 
 from .context import Context
+from .lib.aio_queue import PriorityQueue
+from .lib.smart_lock import SmartLock
 from .task import TaskBase
-from .context_queue import ContextPriority
+
+__all__ = [
+    "TaskItem",
+    "TaskPriority",
+    "TaskPriorityQueue",
+]
 
 
 logger = logging.getLogger(__name__)
@@ -55,14 +52,13 @@ class TaskPriorityQueue:
     """
 
     def __init__(self):
-        self._queue: janus.PriorityQueue[TaskItem] = janus.PriorityQueue()
+        self._queue: PriorityQueue[TaskItem] = PriorityQueue()
         self._sequence_counters: dict[int, int] = {
             TaskPriority.LIFO_HIGH.value: 0,
             TaskPriority.FIFO_HIGH.value: 0,
             TaskPriority.FIFO_LOW.value: 0,
         }
-        self._sync_lock = threading.Lock()
-        self._async_lock = asyncio.Lock()
+        self._lock = SmartLock()
 
     async def async_put_task(
         self,
@@ -78,18 +74,17 @@ class TaskPriorityQueue:
             priority: Priority level for this task
             context_priority: Original context priority for tracking
         """
-        async with self._async_lock:
-            with self._sync_lock:
-                seq = self._sequence_counters[priority.value]
-                self._sequence_counters[priority.value] += 1
+        async with self._lock.async_lock():
+            seq = self._sequence_counters[priority.value]
+            self._sequence_counters[priority.value] += 1
 
-                item = TaskItem(
-                    priority=priority.value,
-                    sequence=seq,
-                    context=context,
-                    task=task,
-                )
-                await self._queue.async_q.put(item)
+            item = TaskItem(
+                priority=priority.value,
+                sequence=seq,
+                context=context,
+                task=task,
+            )
+            await self._queue.async_q.put(item)
 
     async def async_get_task(self) -> TaskItem:
         """Get a task from the queue.

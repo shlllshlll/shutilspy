@@ -1,28 +1,15 @@
-# Copyright (c) 2016 Yoshiki Shibukawa
-#
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-# SOFTWARE.
-# modify from: https://github.com/shibukawa/imagesize_py
+"""Get image dimensions and DPI without loading the full image.
+
+Supports GIF, PNG, JPEG, JPEG2000, TIFF, BigTIFF, SVG, Netpbm, and WebP.
+Modified from: https://github.com/shibukawa/imagesize_py
+"""
 
 import io
 import os
 import re
 import struct
+
+__all__ = ["get", "getDPI"]
 
 _UNIT_KM = -3
 _UNIT_100M = -2
@@ -62,7 +49,7 @@ def _convertToDPI(density, unit):
 def _convertToPx(value):
     matched = re.match(r"(\d+(?:\.\d+)?)?([a-z]*)$", value)
     if not matched:
-        raise ValueError("unknown length value: %s" % value)
+        raise ValueError(f"unknown length value: {value}")
 
     length, unit = matched.groups()
     if unit == "":
@@ -73,22 +60,25 @@ def _convertToPx(value):
         return float(length) * 96 / 2.54 / 10
     elif unit == "in":
         return float(length) * 96
-    elif unit == "pc":
-        return float(length) * 96 / 6
-    elif unit == "pt":
+    elif unit == "pc" or unit == "pt":
         return float(length) * 96 / 6
     elif unit == "px":
         return float(length)
 
-    raise ValueError("unknown unit type: %s" % unit)
+    raise ValueError(f"unknown unit type: {unit}")
 
 
 def get(fhandle: io.BytesIO) -> tuple[int, int]:
-    """
-    Return (width, height) for a given img file content
-    no requirements
-    :type filepath: Union[bytes, str, pathlib.Path]
-    :rtype Tuple[int, int]
+    """Return (width, height) for a given image file content.
+
+    Args:
+        fhandle: A BytesIO object containing image data.
+
+    Returns:
+        A tuple of (width, height). Returns (-1, -1) if the format is not recognized.
+
+    Raises:
+        ValueError: If the file data is invalid for its detected format.
     """
     height = -1
     width = -1
@@ -102,20 +92,20 @@ def get(fhandle: io.BytesIO) -> tuple[int, int]:
             try:
                 width, height = struct.unpack("<hh", head[6:10])
             except struct.error:
-                raise ValueError("Invalid GIF file")
+                raise ValueError("Invalid GIF file") from None
         # see png edition spec bytes are below chunk length then and finally the
         elif size >= 24 and head.startswith(b'\211PNG\r\n\032\n') and head[12:16] == b'IHDR':
             try:
                 width, height = struct.unpack(">LL", head[16:24])
             except struct.error:
-                raise ValueError("Invalid PNG file")
+                raise ValueError("Invalid PNG file") from None
         # Maybe this is for an older PNG version.
         elif size >= 16 and head.startswith(b'\211PNG\r\n\032\n'):
             # Check to see if we have the right content type
             try:
                 width, height = struct.unpack(">LL", head[8:16])
             except struct.error:
-                raise ValueError("Invalid PNG file")
+                raise ValueError("Invalid PNG file") from None
         # handle JPEGs
         elif size >= 2 and head.startswith(b'\377\330'):
             try:
@@ -133,21 +123,21 @@ def get(fhandle: io.BytesIO) -> tuple[int, int]:
                 fhandle.seek(1, 1)  # Skip `precision' byte.
                 height, width = struct.unpack('>HH', fhandle.read(4))
             except (struct.error, TypeError):
-                raise ValueError("Invalid JPEG file")
+                raise ValueError("Invalid JPEG file") from None
         # handle JPEG2000s
         elif size >= 12 and head.startswith(b'\x00\x00\x00\x0cjP  \r\n\x87\n'):
             fhandle.seek(48)
             try:
                 height, width = struct.unpack('>LL', fhandle.read(8))
             except struct.error:
-                raise ValueError("Invalid JPEG2000 file")
+                raise ValueError("Invalid JPEG2000 file") from None
         # handle big endian TIFF
         elif size >= 8 and head.startswith(b"\x4d\x4d\x00\x2a"):
             offset = struct.unpack('>L', head[4:8])[0]
             fhandle.seek(offset)
             ifdsize = struct.unpack(">H", fhandle.read(2))[0]
-            for i in range(ifdsize):
-                tag, datatype, count, data = struct.unpack(">HHLL", fhandle.read(12))
+            for _i in range(ifdsize):
+                tag, datatype, _count, data = struct.unpack(">HHLL", fhandle.read(12))
                 if tag == 256:
                     if datatype == 3:
                         width = int(data / 65536)
@@ -170,8 +160,8 @@ def get(fhandle: io.BytesIO) -> tuple[int, int]:
             offset = struct.unpack('<L', head[4:8])[0]
             fhandle.seek(offset)
             ifdsize = struct.unpack("<H", fhandle.read(2))[0]
-            for i in range(ifdsize):
-                tag, datatype, count, data = struct.unpack("<HHLL", fhandle.read(12))
+            for _i in range(ifdsize):
+                tag, datatype, _count, data = struct.unpack("<HHLL", fhandle.read(12))
                 if tag == 256:
                     width = data
                 elif tag == 257:
@@ -184,12 +174,12 @@ def get(fhandle: io.BytesIO) -> tuple[int, int]:
         elif size >= 8 and head.startswith(b"\x49\x49\x2b\x00"):
             bytesize_offset = struct.unpack('<L', head[4:8])[0]
             if bytesize_offset != 8:
-                raise ValueError('Invalid BigTIFF file: Expected offset to be 8, found {} instead.'.format(offset))
+                raise ValueError(f'Invalid BigTIFF file: Expected offset to be 8, found {offset} instead.')
             offset = struct.unpack('<Q', head[8:16])[0]
             fhandle.seek(offset)
             ifdsize = struct.unpack("<Q", fhandle.read(8))[0]
-            for i in range(ifdsize):
-                tag, datatype, count, data = struct.unpack("<HHQQ", fhandle.read(20))
+            for _i in range(ifdsize):
+                tag, datatype, _count, data = struct.unpack("<HHQQ", fhandle.read(20))
                 if tag == 256:
                     width = data
                 elif tag == 257:
@@ -208,7 +198,7 @@ def get(fhandle: io.BytesIO) -> tuple[int, int]:
                 width = re.search(r'[^-]width="(.*?)"', data).group(1)
                 height = re.search(r'[^-]height="(.*?)"', data).group(1)
             except Exception:
-                raise ValueError("Invalid SVG file")
+                raise ValueError("Invalid SVG file") from None
             width = _convertToPx(width)
             height = _convertToPx(height)
 
@@ -267,11 +257,16 @@ def get(fhandle: io.BytesIO) -> tuple[int, int]:
 
 
 def getDPI(filepath):
-    """
-    Return (x DPI, y DPI) for a given img file content
-    no requirements
-    :type filepath: Union[bytes, str, pathlib.Path]
-    :rtype Tuple[int, int]
+    """Return (x DPI, y DPI) for a given image file.
+
+    Args:
+        filepath: Path to the image file.
+
+    Returns:
+        A tuple of (xDPI, yDPI). Returns (-1, -1) if DPI information is not available.
+
+    Raises:
+        ValueError: If the file data is invalid for its detected format.
     """
     xDPI = -1
     yDPI = -1
@@ -296,7 +291,7 @@ def getDPI(filepath):
                     try:
                         xDensity, yDensity, unit = struct.unpack(">LLB", chunk[8:])
                     except struct.error:
-                        raise ValueError("Invalid PNG file")
+                        raise ValueError("Invalid PNG file") from None
                     if unit:
                         xDPI = _convertToDPI(xDensity, _UNIT_1M)
                         yDPI = _convertToDPI(yDensity, _UNIT_1M)
@@ -310,7 +305,7 @@ def getDPI(filepath):
                     try:
                         dataSize, = struct.unpack(">L", chunk[0:4])
                     except struct.error:
-                        raise ValueError("Invalid PNG file")
+                        raise ValueError("Invalid PNG file") from None
                     chunkOffset += dataSize + 12
                     fhandle.seek(chunkOffset)
                     chunk = fhandle.read(17)
@@ -338,7 +333,7 @@ def getDPI(filepath):
                     ftype = ord(byte)
                     size = struct.unpack('>H', fhandle.read(2))[0] - 2
             except struct.error:
-                raise ValueError("Invalid JPEG file")
+                raise ValueError("Invalid JPEG file") from None
         # handle JPEG2000s
         elif size >= 12 and head.startswith(b'\x00\x00\x00\x0cjP  \r\n\x87\n'):
             fhandle.seek(32)
@@ -369,6 +364,6 @@ def getDPI(filepath):
                         boxSize, = struct.unpack('>L', boxHeader[:4])
                         fhandle.seek(boxSize - 8, 1)
                         headerSize -= boxSize
-            except struct.error as e:
-                raise ValueError("Invalid JPEG2000 file")
+            except struct.error:
+                raise ValueError("Invalid JPEG2000 file") from None
     return xDPI, yDPI

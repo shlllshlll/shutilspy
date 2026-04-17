@@ -1,38 +1,29 @@
-#!/usr/bin/env python3
-# -*- coding:utf-8 -*-
-"""
-File: simplified_executor.py
-Author: shlll(shlll7347@gmail.com)
-Modified By: shlll(shlll7347@gmail.com)
-Brief: [WIP] Simplified single-level Executor for async DAG execution
-"""
+"""Single-level DAG executor with global task-based scheduling."""
 
-import time
-import contextvars
-import logging
-from dataclasses import dataclass
-import traceback
-from typing import Any, AsyncGenerator
 import asyncio
+import logging
+import time
+import traceback
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 
-from .runtime import Runtime
+from .context import Context, LoopContext, OutputContext, RateLimitContext, StopContext
 from .dag import DAG
-from .task import (
-    TaskBase,
-    ForegroundTask,
-    AsyncTask,
-    SyncTask,
-    ShutdownTask,
-    AsyncShutdownTask,
-    Environment,
-)
 from .executor import Executor, ExecutorConfig, _worker_context_var
-from .context import Context, OutputContext, StopContext, LoopContext, RateLimitContext
+from .runtime import Runtime
+from .task import (
+    AsyncShutdownTask,
+    AsyncTask,
+    Environment,
+    ForegroundTask,
+    ShutdownTask,
+    SyncTask,
+    TaskBase,
+)
+from .task_queue import TaskItem, TaskPriority, TaskPriorityQueue
 from .task_state import ErrorInfo
-from .task_queue import TaskPriorityQueue, TaskPriority, TaskItem
-from .context_queue import ContextPriority
+
+__all__ = ["TaskExecutor"]
 
 
 logger = logging.getLogger(__name__)
@@ -57,8 +48,17 @@ class TaskExecutor(Executor):
         self,
         dag: DAG,
         runtime: Runtime | None = None,
-        config: ExecutorConfig = ExecutorConfig(),
+        config: ExecutorConfig | None = None,
     ):
+        """Initialize the TaskExecutor.
+
+        Args:
+            dag: The DAG to execute.
+            runtime: Optional runtime for tracking active contexts.
+            config: Executor configuration.
+        """
+        if config is None:
+            config = ExecutorConfig()
         super().__init__(dag, runtime, config)
 
         # Task queue for global scheduling
@@ -100,7 +100,7 @@ class TaskExecutor(Executor):
                 TaskPriority.FIFO_HIGH
             )
 
-        logger.info(f"[SimplifiedExecutor.run]: initial tasks enqueued")
+        logger.info("[SimplifiedExecutor.run]: initial tasks enqueued")
 
         # Create environment
         env = Environment(self.runtime, self._process_pool, self.dag)
@@ -130,7 +130,13 @@ class TaskExecutor(Executor):
         return output_context
 
     @asynccontextmanager
-    async def check_get_task(self, timeout: float | None = None, use_counter: bool = True) -> AsyncGenerator[TaskItem, None]:
+    async def check_get_task(self, timeout: float | None = None, use_counter: bool = True) -> AsyncGenerator[TaskItem]:
+        """Context manager that gets a task from the queue with optional timeout.
+
+        Args:
+            timeout: Seconds to wait for a task.
+            use_counter: Whether to check the runtime counter for stop condition.
+        """
         counter = self.runtime.counter
         if not use_counter or counter > 0:
             async with asyncio.timeout(timeout):
@@ -175,10 +181,13 @@ class TaskExecutor(Executor):
 
                     avaliable_tasks = await in_context.async_task_state.avaliable_task()
                     if not avaliable_tasks:
-                        logger.error(f"[Worker{worker_id}]: Context {in_context} do not have avaliable task, will destory")
+                        logger.error(
+                            f"[Worker{worker_id}]: Context {in_context} "
+                            "do not have avaliable task, will destory"
+                        )
                         await in_context.async_context.destory()
                         continue
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 logger.debug(f"[Worker{worker_id}]: Queue timeout, waiting...")
                 continue
 
@@ -194,6 +203,7 @@ class TaskExecutor(Executor):
                     in_context,
                     env
                 )
+                output_contexts_list = [ context for context in output_contexts_list if not context.freezing ]
 
                 # Handle task output
                 for output_context in output_contexts_list:
@@ -268,8 +278,7 @@ class TaskExecutor(Executor):
                     raise ValueError(f"[Worker{idx}]: Unknown task type: {type(task)}")
             logger.debug(f"[Worker{idx}]: {in_context} running {task} done")
         except Exception as e:
-            if task.config.retry_times > 0:
-                if await in_context.async_task_state.retry(task) <= task.config.retry_times:
+            if task.config.retry_times > 0 and await in_context.async_task_state.retry(task) <= task.config.retry_times:
                     if task.config.retry_interval != 0:
                         if callable(task.config.retry_interval):
                             interval = task.config.retry_interval(in_context)
@@ -284,7 +293,7 @@ class TaskExecutor(Executor):
             await in_context.async_context.destory()
 
         for idx, out_context in enumerate(context_list):
-            if isinstance(out_context, LoopContext) is False and isinstance(out_context, RateLimitContext) is False:
+            if not isinstance(out_context, LoopContext) and not isinstance(out_context, RateLimitContext):
                 await out_context.async_context.complete(task)
             if isinstance(out_context, RateLimitContext):
                 context_list[idx] = out_context.context

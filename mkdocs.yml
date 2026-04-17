@@ -1,0 +1,47 @@
+site_name: shutilspy
+site_description: Python utilities including DAG task framework, caching, rate limiting, RW locks, and parameter helpers
+theme:
+  name: material
+  palette:
+    - scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+plugins:
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: ["."]
+          options:
+            docstring_style: google
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Modules:
+    - utils: api/utils.md
+    - rwlock: api/rwlock.md
+    - cache: api/cache.md
+    - param: api/param.md
+    - rate_limiter: api/rate_limiter.md
+    - imagesize: api/imagesize.md
+  - DAG Framework:
+    - Overview: dag/index.md
+    - Guide: dag/guide.md
+    - API Reference:
+      - DAG: api/dag/dag.md
+      - Task: api/dag/task.md
+      - Context: api/dag/context.md
+      - Executor: api/dag/executor.md
+      - ServeExecutor: api/dag/serve_executor.md
+      - TaskExecutor: api/dag/task_executor.md
+      - DataWhiteBoard: api/dag/data_white_board.md
+      - TaskState: api/dag/task_state.md
+      - ContextQueue: api/dag/context_queue.md
+      - TaskQueue: api/dag/task_queue.md
+      - Runtime: api/dag/runtime.md

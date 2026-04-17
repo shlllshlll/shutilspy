@@ -1,20 +1,17 @@
-#!/usr/bin/env python3
-# -*- coding:utf-8 -*-
-"""
-File: dag.py
-Author: shlll(shlll7347@gmail.com)
-Modified By: shlll(shlll7347@gmail.com)
-Brief:
-"""
+"""DAG graph definition and task dependency management."""
 
-from turtle import down
-from typing import Iterable
-from .task import TaskBase, SourceNode, SinkNode
-from ..rwlock import AsyncRWLock
+from collections.abc import Iterable
+
+from .task import SinkNode, SourceNode, TaskBase
+
+__all__ = ["DAG"]
 
 
 class DAG:
+    """Directed Acyclic Graph for managing task dependencies and execution order."""
+
     def __init__(self):
+        """Initialize an empty DAG with source and sink nodes."""
         self.tasks: dict[str, TaskBase] = {}
         self.in_task: SourceNode = SourceNode()
         self.out_task: SinkNode = SinkNode()
@@ -24,7 +21,15 @@ class DAG:
         self._downstream_tasks: dict[TaskBase, set[TaskBase]] = {}
         self._upstream_tasks: dict[TaskBase, set[TaskBase]] = {}
 
-    def add_task(self, task: TaskBase, dependencies: Iterable[TaskBase] | TaskBase = []):
+    def add_task(self, task: TaskBase, dependencies: Iterable[TaskBase] | TaskBase = None):
+        """Add a task to the DAG with optional upstream dependencies.
+
+        Args:
+            task: The task to add.
+            dependencies: Upstream tasks that must complete before this task.
+        """
+        if dependencies is None:
+            dependencies = []
         self.tasks[task.id] = task
         if isinstance(dependencies, TaskBase):
             dependencies = [dependencies]
@@ -34,6 +39,11 @@ class DAG:
             self.start_tasks.add(task)
 
     def build(self):
+        """Build the DAG by connecting source/sink nodes and initializing task sets.
+
+        Raises:
+            ValueError: If no start tasks are defined.
+        """
         if len(self.start_tasks) == 0:
             raise ValueError("No start task")
 
@@ -95,7 +105,15 @@ class DAG:
         collect(self.in_task)
 
     def _get_all_downstream_tasks(self, task: TaskBase | Iterable[TaskBase], add_self: bool = False) -> set[TaskBase]:
-        """get all downstream tasks for a task"""
+        """Get all transitive downstream tasks for a task or set of tasks.
+
+        Args:
+            task: A single task or iterable of tasks.
+            add_self: Whether to include the input tasks in the result.
+
+        Returns:
+            Set of all downstream tasks.
+        """
         if not self._downstream_tasks:
             self.__collect_downstream_tasks()
 
@@ -107,7 +125,15 @@ class DAG:
         return result
 
     def _get_all_upstream_tasks(self, task: TaskBase | Iterable[TaskBase], add_self: bool = False) -> set[TaskBase]:
-        """get all upstream tasks for a task"""
+        """Get all transitive upstream tasks for a task or set of tasks.
+
+        Args:
+            task: A single task or iterable of tasks.
+            add_self: Whether to include the input tasks in the result.
+
+        Returns:
+            Set of all upstream tasks.
+        """
         if not self._upstream_tasks:
             self.__collect_upstream_tasks()
 
@@ -119,7 +145,14 @@ class DAG:
         return result
 
     def _get_bypass_tasks(self, task_list: TaskBase | Iterable[TaskBase]) -> set[TaskBase]:
-        """get all bypass tasks for a task"""
+        """Get tasks that are neither upstream nor downstream of the given tasks.
+
+        Args:
+            task_list: A single task or iterable of tasks.
+
+        Returns:
+            Set of bypass tasks.
+        """
         downstream_tasks = self._get_all_downstream_tasks(task_list)
         task_set = set(task_list) if isinstance(task_list, Iterable) else {task_list}
         bypass_tasks = (

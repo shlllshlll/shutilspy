@@ -1,21 +1,21 @@
-#!/usr/bin/env python3
-# -*- coding:utf-8 -*-
-"""
-File: helper.py
-Author: shlll(shlll7347@gmail.com)
-Modified By: shlll(shlll7347@gmail.com)
-Brief:
-"""
+"""Helper utilities for building DAGs from configuration dictionaries."""
 
-import inspect
 import importlib
-from typing import Any, Callable
+import inspect
+from collections.abc import Callable
 from functools import partial
-from .dag import DAG
+from typing import Any
+
 from ..utils import get_class
-from .task import TaskBase, TaskConfig
-from .runtime import Runtime
+from .dag import DAG
 from .executor import Executor
+from .task import TaskBase, TaskConfig
+
+__all__ = [
+    "build_dag",
+    "get_callable_func",
+    "get_params",
+]
 
 
 def get_callable_func(func_str: str) -> Callable[..., Any]:
@@ -57,7 +57,7 @@ def get_callable_func(func_str: str) -> Callable[..., Any]:
     return processor_func
 
 
-def get_params(params: dict) -> dict[str, Any]]:
+def get_params(params: dict) -> dict[str, Any]:
     """get params from dict
 
     Args:
@@ -70,7 +70,7 @@ def get_params(params: dict) -> dict[str, Any]]:
         dict[str, Any]: kwargs
     """
     kwargs = {}
-    if type(params) == dict:
+    if isinstance(params, dict):
         for key, value in params.items():
             if isinstance(value, str) and value.startswith("eval(") and value.endswith(")"):
                 kwargs[key] = eval(value[5:-1])
@@ -82,6 +82,14 @@ def get_params(params: dict) -> dict[str, Any]]:
     return kwargs
 
 def build_dag(dag_conf: dict[str, Any]) -> Executor:
+    """Build a DAG executor from a configuration dictionary.
+
+    Args:
+        dag_conf: Configuration dict with "tasks" list and optional "worker_num".
+
+    Returns:
+        A configured Executor ready to run.
+    """
     worker_num = dag_conf.get("worker_num", 1)
     dag = DAG()
     task_dict: dict[str, tuple[TaskBase, dict[str, Any]]] = {}

@@ -1,50 +1,54 @@
-#!/usr/bin/env python3
-# -*- coding:utf-8 -*-
-"""
-File: cache.py
-Author: shlll(shlll7347@gmail.com)
-Modified By: shlll(shlll7347@gmail.com)
-Brief:
-"""
+"""Server-style DAG executor that supports submitting tasks and retrieving results asynchronously."""
 
-import time
-import logging
 import asyncio
+import logging
 from enum import Enum
-from typing import Any, override
+from typing import override
+
+from ..rwlock import AsyncRWLock
+from .context import Context, LoopContext, OutputContext, StopContext
+from .context_queue import ContextPriority
 from .dag import DAG
+from .executor import Executor, ExecutorConfig, _worker_context_var
 from .runtime import Runtime
-from .context import Context, OutputContext, StopContext, LoopContext, RateLimitContext
 from .task import (
-    TaskBase,
-    ForegroundTask,
-    AsyncTask,
-    SyncTask,
-    ShutdownTask,
     AsyncShutdownTask,
     Environment,
+    ShutdownTask,
 )
-from .executor import Executor, ExecutorConfig, _worker_context_var
-from .context_queue import ContextPriority
-from ..rwlock import AsyncRWLock
+
+__all__ = ["ContextStatus", "ServeExecutor"]
 
 
 logger = logging.getLogger(__name__)
 
 
 class ContextStatus(Enum):
+    """Status of a submitted context in the ServeExecutor."""
+
     INIT = "INIT"
     RUNNING = "RUNNING"
     FINISH = "FINISH"
 
 class ServeExecutor(Executor):
+    """Long-running DAG executor that supports submitting contexts and awaiting results."""
+
     @override
     def __init__(
         self,
         dag: DAG,
         runtime: Runtime | None = None,
-        config: ExecutorConfig = ExecutorConfig(),
+        config: ExecutorConfig | None = None,
     ):
+        """Initialize the serve executor.
+
+        Args:
+            dag: The DAG to execute.
+            runtime: Optional runtime for tracking active contexts.
+            config: Executor configuration.
+        """
+        if config is None:
+            config = ExecutorConfig()
         super().__init__(dag, runtime, config)
         self.context_status_dict: dict[str, ContextStatus] = {}
         self.context_result_trackers: dict[str, asyncio.Future] = {}
@@ -52,8 +56,12 @@ class ServeExecutor(Executor):
 
 
     async def run(self) -> None:    # type: ignore[override]
+        """Start the worker pool. Does not return until shutdown."""
         env = Environment(self.runtime, self._process_pool, self.dag)
-        worker_tasks = [asyncio.create_task(self._worker_loop(idx, env)) for idx in range(self._config.context_worker_num)]
+        worker_tasks = [
+            asyncio.create_task(self._worker_loop(idx, env))
+            for idx in range(self._config.context_worker_num)
+        ]
         await asyncio.gather(*worker_tasks)
 
         for task in self.dag.tasks.values():
@@ -70,7 +78,10 @@ class ServeExecutor(Executor):
                 async with self.check_get_context(self._config.context_queue_timeout, False) as in_context:
                     logger.debug(f"[Worker{idx}]: get context[{in_context}] from async queue done")
                     if isinstance(in_context, StopContext):
-                        logger.error(f"[Worker{idx}]: get unexpected StopContext, ServeExecutor will not stop, please check your code, skip")
+                        logger.error(
+                            f"[Worker{idx}]: get unexpected StopContext, "
+                            "ServeExecutor will not stop, please check your code, skip"
+                        )
                         continue
                     if in_context.is_destory():
                         logger.error(f"[Worker{idx}]: Context {in_context} is destory, skip")
@@ -99,17 +110,25 @@ class ServeExecutor(Executor):
                 if len(context_list_list) > 1:
                     # need deduplicate
                     context_list = list(set(context_list))
+                context_list = [ context for context in context_list if not context.freezing ]
                 await self._context_postprocess(in_context, context_list, avaliable_tasks)
                 for out_context in context_list:
                     if isinstance(out_context, OutputContext):
                         if out_context.id not in self.context_status_dict:
-                            logger.error(f"[Worker{idx}]: OutputContext {out_context} id {out_context.id} not in context_status_dict, please check your code, skip")
+                            logger.error(
+                                f"[Worker{idx}]: OutputContext {out_context} id {out_context.id} "
+                                "not in context_status_dict, please check your code, skip"
+                            )
                             continue
 
                         async with self.lock.write():
                             context_status= self.context_status_dict[out_context.id]
                             if context_status == ContextStatus.FINISH:
-                                logger.error(f"[Worker{idx}]: OutputContext {out_context} id {out_context.id} already FINISH, please check your code and comfirm only one output for one input, skip")
+                                logger.error(
+                                    f"[Worker{idx}]: OutputContext {out_context} id {out_context.id} "
+                                    "already FINISH, please check your code and "
+                                    "comfirm only one output for one input, skip"
+                                )
                                 continue
                             self.context_status_dict[out_context.id] = ContextStatus.FINISH
                             self.context_result_trackers[out_context.id].set_result(out_context.asdit())
@@ -120,13 +139,24 @@ class ServeExecutor(Executor):
                             await self._context_queue.async_queue.put(out_context, ContextPriority.FIFO_LOW)
                         else:
                             await self._context_queue.async_queue.put(out_context, ContextPriority.FIFO_HIGH)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 logger.debug(f"[Worker{idx}]: context queue get timeout, skip")
                 continue
 
         return []
 
     async def submit_task(self, context: Context) -> str:
+        """Submit a context for execution and return its ID.
+
+        Args:
+            context: The input context to process.
+
+        Returns:
+            The context ID for tracking status and results.
+
+        Raises:
+            ValueError: If a context with the same ID has already been submitted.
+        """
         async with self.lock.write():
             if context.id in self.context_status_dict:
                 raise ValueError(f"Context {context} already submitted.")
@@ -139,12 +169,34 @@ class ServeExecutor(Executor):
         return context.id
 
     async def get_task_status(self, task_id: str):
+        """Get the current status of a submitted context.
+
+        Args:
+            task_id: The context ID returned by submit_task.
+
+        Returns:
+            The ContextStatus enum value.
+
+        Raises:
+            ValueError: If the task_id is not found.
+        """
         async with self.lock.read():
             if task_id not in self.context_status_dict:
                 raise ValueError(f"Task id {task_id} not found.")
             return self.context_status_dict[task_id]
 
     async def get_task_result(self, task_id: str) -> dict:
+        """Wait for and return the result of a submitted context.
+
+        Args:
+            task_id: The context ID returned by submit_task.
+
+        Returns:
+            The output data dictionary.
+
+        Raises:
+            ValueError: If the task_id is not found.
+        """
         async with self.lock.read():
             if task_id not in self.context_result_trackers:
                 raise ValueError(f"Task id {task_id} not found.")

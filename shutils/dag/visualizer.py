@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding:utf-8 -*-
 """
 File: visualizer.py
 Author: shlll(shlll7347@gmail.com)
@@ -7,15 +6,18 @@ Brief: Static DAG visualization service using Flask and D3.js
 """
 
 import threading
-from typing import Optional, Union
+
 try:
-    from flask import Flask, render_template, jsonify
+    from flask import Flask, jsonify, render_template
 except ImportError:
-    raise ImportError("Flask is required for the visualizer. Please install shutilspy with 'pip install shutilspy[visualizer]'.")
+    raise ImportError(
+        "Flask is required for the visualizer. "
+        "Please install shutilspy with 'pip install shutilspy[visualizer]'."
+    ) from None
 from .dag import DAG
 
 app = Flask(__name__)
-_current_dag: Optional[DAG] = None
+_current_dag: DAG | None = None
 
 def create_dag_graph(dag: DAG):
     """Convert DAG to a graph structure for visualization"""
@@ -49,7 +51,7 @@ def get_dag():
         return jsonify({"error": "No DAG is currently being visualized"}), 400
     return jsonify(create_dag_graph(_current_dag))
 
-def start_visualizer(dag: DAG, host='localhost', port=5000, background: bool = False) -> Union[threading.Thread, None]:
+def start_visualizer(dag: DAG, host='localhost', port=5000, background: bool = False) -> threading.Thread | None:
     """Start the visualization server
 
     Args:

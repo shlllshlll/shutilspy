@@ -1,6 +1,6 @@
 package:
   name: shutilspy-visualizer
-  version: 0.1.0
+  version: 0.1.1
 
 source:
   path: ..
@@ -16,9 +16,20 @@ requirements:
     - pip
   run:
     - python
-    - janus
     - flask
 
 about:
+  summary: 'Python utilities including DAG task framework'
+  readme: README.md
+
   license: MIT
-  summary: 'common python utils'
+  license_file: LICENSE
+  license_family: MIT
+
+  home: https://github.com/shlllshlll/shutilspy 
+  dev_url: https://github.com/shlllshlll/shutilspy
+  doc_url: https://shlllshlll.github.io/shutilspy/
+
+extra:
+  recipe-maintainers:
+    - shlllshlll
