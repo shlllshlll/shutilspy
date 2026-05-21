@@ -437,6 +437,9 @@ class SyncLoopTask(SyncStreamTask):
 class SyncThreadTask(SyncTask, LongRunningTask, ShutdownTask):
     """Sync task that runs in a dedicated background thread."""
 
+    def _long_running_marker(self):
+        """Implement abstract method from LongRunningTask."""
+
     def __init__(
         self,
         func: Callable[[queue.Queue[tuple[Context, queue.Queue[list[Context] | Context | None]]]], None],
@@ -486,6 +489,9 @@ class SyncThreadTask(SyncTask, LongRunningTask, ShutdownTask):
 
 class AsyncServiceTask(AsyncTask, LongRunningTask, AsyncShutdownTask):
     """Async task backed by a long-running coroutine service."""
+
+    def _long_running_marker(self):
+        """Implement abstract method from LongRunningTask."""
 
     def __init__(
         self,
