@@ -1,0 +1,1808 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Python utilities including DAG task framework, caching, rate limiting, RW locks, and parameter helpers">
+      
+      
+      
+      
+        <link rel="prev" href="../">
+      
+      
+        <link rel="next" href="../../api/dag/dag/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Guide - shutilspy</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#dag-guide" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="shutilspy" class="md-header__button md-logo" aria-label="shutilspy" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            shutilspy
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Guide
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="shutilspy" class="md-nav__button md-logo" aria-label="shutilspy" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    shutilspy
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Modules
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Modules
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/utils/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    utils
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/rwlock/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rwlock
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/cache/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    cache
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/param/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    param
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/rate_limiter/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rate_limiter
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/imagesize/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    imagesize
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DAG Framework
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    DAG Framework
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guide
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#context" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Context
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Context">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#asynccontext" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AsyncContext
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#synccontext" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SyncContext
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#task-types" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task Types
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Task Types">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#asyncfunctiontask" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AsyncFunctionTask
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#asyncroutertask" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AsyncRouterTask
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#asyncstreamtask" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AsyncStreamTask
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#asynclooptask" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AsyncLoopTask
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#asyncservicetask" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AsyncServiceTask
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#syncfunctiontask" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SyncFunctionTask
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#shutdown-tasks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Shutdown Tasks
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#task-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task Configuration
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#building-a-dag" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Building a DAG
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#executor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Executor
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Executor">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#offline-executor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Offline Executor
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#online-executor-serveexecutor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Online Executor (ServeExecutor)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#visualization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Visualization
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_3" id="__nav_4_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/dag/dag/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DAG
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/dag/task/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/dag/context/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Context
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/dag/executor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Executor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/dag/serve_executor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ServeExecutor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/dag/task_executor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TaskExecutor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/dag/data_white_board/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DataWhiteBoard
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/dag/task_state/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TaskState
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/dag/context_queue/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ContextQueue
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/dag/task_queue/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TaskQueue
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/dag/runtime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Runtime
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#context" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Context
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Context">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#asynccontext" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AsyncContext
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#synccontext" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SyncContext
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#task-types" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task Types
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Task Types">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#asyncfunctiontask" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AsyncFunctionTask
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#asyncroutertask" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AsyncRouterTask
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#asyncstreamtask" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AsyncStreamTask
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#asynclooptask" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AsyncLoopTask
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#asyncservicetask" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AsyncServiceTask
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#syncfunctiontask" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SyncFunctionTask
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#shutdown-tasks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Shutdown Tasks
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#task-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task Configuration
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#building-a-dag" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Building a DAG
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#executor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Executor
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Executor">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#offline-executor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Offline Executor
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#online-executor-serveexecutor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Online Executor (ServeExecutor)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#visualization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Visualization
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="dag-guide">DAG Guide</h1>
+<h2 id="context">Context</h2>
+<p>Context is the data carrier that flows between tasks. It provides thread-safe key-value storage via DataWhiteBoard and supports both sync and async operations.</p>
+<h3 id="asynccontext">AsyncContext</h3>
+<p>In async tasks, use <code>AsyncContext</code> for data operations:</p>
+<pre><code class="language-python">async def my_task(async_ctx):
+    # Read data
+    value = await async_ctx.get_item(&quot;key&quot;)
+    # Read data with default (returns None if key missing)
+    value = await async_ctx.get(&quot;key&quot;)
+    # Read data with custom default
+    value = await async_ctx.get(&quot;key&quot;, &quot;default&quot;)
+
+    # Write data
+    await async_ctx.set_item(&quot;key&quot;, &quot;value&quot;)
+    # Write multiple key-value pairs at once
+    await async_ctx.set_data(key1=&quot;value1&quot;, key2=&quot;value2&quot;)
+
+    # Delete data
+    await async_ctx.del_item(&quot;key&quot;)
+
+    # Get number of items
+    length = await async_ctx.len()
+
+    # Iterate over keys
+    async for key in async_ctx.keys():
+        print(key)
+
+    # Iterate over values
+    async for value in async_ctx.values():
+        print(value)
+
+    # Iterate over key-value pairs
+    async for key, value in async_ctx.items():
+        print(key, value)
+
+    # Check key existence
+    exists = await async_ctx.contains(&quot;key&quot;)
+
+    # Create a new context (for data-generating tasks)
+    new_ctx = await async_ctx.create()
+
+    # Destroy current context (when no longer needed)
+    await async_ctx.destroy()
+
+    # Lock for reading
+    async with async_ctx.rlock():
+        await do_something(async_ctx)
+
+    # Lock for writing
+    async with async_ctx.wlock():
+        await do_something(async_ctx)
+
+    return async_ctx
+</code></pre>
+<h3 id="synccontext">SyncContext</h3>
+<p>In sync tasks, use <code>SyncContext</code> with dict-like syntax:</p>
+<pre><code class="language-python">def my_task(sync_ctx):
+    # Read data
+    value = sync_ctx[&quot;key&quot;]
+    # Read data with default (returns None if key missing)
+    value = sync_ctx.get(&quot;key&quot;)
+    # Read data with custom default
+    value = sync_ctx.get(&quot;key&quot;, &quot;default&quot;)
+
+    # Write data
+    sync_ctx[&quot;key&quot;] = &quot;value&quot;
+    # Write multiple key-value pairs at once
+    sync_ctx.set_data(key1=&quot;value1&quot;, key2=&quot;value2&quot;)
+
+    # Delete data
+    del sync_ctx[&quot;key&quot;]
+
+    # Get number of items
+    length = len(sync_ctx)
+
+    # Iterate over keys
+    for key in sync_ctx:
+        print(key)
+    for key in sync_ctx.keys():
+        print(key)
+
+    # Iterate over values
+    for value in sync_ctx.values():
+        print(value)
+
+    # Iterate over key-value pairs
+    for key, value in sync_ctx.items():
+        print(key, value)
+
+    # Check key existence
+    if &quot;key&quot; in sync_ctx:
+        pass
+
+    # Create a new context (for data-generating tasks)
+    new_ctx = sync_ctx.create()
+
+    # Destroy current context (when no longer needed)
+    sync_ctx.destroy()
+
+    # Lock for reading
+    with sync_ctx.rlock():
+        do_something(sync_ctx)
+
+    # Lock for writing
+    with sync_ctx.wlock():
+        do_something(sync_ctx)
+
+    return sync_ctx
+</code></pre>
+<h2 id="task-types">Task Types</h2>
+<h3 id="asyncfunctiontask">AsyncFunctionTask</h3>
+<p>Simple async task that processes a context and returns it. Return values:</p>
+<ul>
+<li><code>AsyncContext</code> — pass the context downstream</li>
+<li><code>list[AsyncContext]</code> — pass multiple contexts downstream (e.g., one new + the original)</li>
+<li><code>None</code> — discard the context</li>
+</ul>
+<pre><code class="language-python">async def process(async_ctx):
+    data = await async_ctx.get(&quot;key&quot;, None)
+    if data is None:
+        return None  # Discard context
+
+    if data == &quot;create_new_context&quot;:
+        # Create a new context and return both
+        new_ctx = await async_ctx.create()
+        return [new_ctx, async_ctx]
+
+    result = await transform(data)
+    await async_ctx.set(&quot;key&quot;, result)
+    return async_ctx
+
+task = AsyncFunctionTask(process, name=&quot;process&quot;)
+</code></pre>
+<h3 id="asyncroutertask">AsyncRouterTask</h3>
+<p>Routes context to specific downstream tasks based on data. By default (without a router), contexts are sent to all downstream tasks. Return values can be:</p>
+<ul>
+<li><code>str</code> — task ID of the downstream task</li>
+<li><code>TaskBase</code> — downstream task instance</li>
+<li><code>list[str | TaskBase]</code> — route to multiple downstream tasks</li>
+</ul>
+<pre><code class="language-python">async def route(async_ctx):
+    data = await async_ctx.get(&quot;type&quot;, None)
+    if data == &quot;type_a&quot;:
+        return &quot;task_a&quot;  # Route by task ID
+    elif data == &quot;type_b&quot;:
+        return task_b     # Route by task instance
+    else:
+        return [&quot;task_a&quot;, &quot;task_b&quot;]  # Route to multiple tasks
+
+task = AsyncRouterTask(route, name=&quot;router&quot;)
+</code></pre>
+<h3 id="asyncstreamtask">AsyncStreamTask</h3>
+<p>Generator-based task that maintains state across invocations:</p>
+<pre><code class="language-python">async def stream_processor():
+    ctx = yield
+    while True:
+        data = await ctx.get_item(&quot;data&quot;)
+        result = await process(data)
+        await ctx.set_item(&quot;result&quot;, result)
+        ctx = yield ctx
+
+task = AsyncStreamTask(stream_processor, name=&quot;stream&quot;)
+</code></pre>
+<h3 id="asynclooptask">AsyncLoopTask</h3>
+<p>Continuous task that only receives an initial context, then produces new contexts in a loop without further input. This is ideal for source tasks (e.g., reading a file line by line), as it can push contexts into the DAG earlier than a one-shot <code>AsyncFunctionTask</code> that would need to read the entire file first. The DAG executor prioritizes contexts already in the pipeline, so <code>AsyncLoopTask</code> helps avoid context queuing bottlenecks.</p>
+<pre><code class="language-python">async def file_reader():
+    start_ctx = yield
+    async for line in read_file():
+        new_ctx = await start_ctx.create()
+        await new_ctx.set(&quot;line&quot;, line)
+        yield new_ctx
+
+task = AsyncLoopTask(file_reader, name=&quot;reader&quot;)
+</code></pre>
+<h3 id="asyncservicetask">AsyncServiceTask</h3>
+<p>Long-running task that processes contexts one at a time:</p>
+<pre><code class="language-python">async def writer_service(queue):
+    async with aiofiles.open(&quot;output.txt&quot;, &quot;w&quot;) as f:
+        while True:
+            async_ctx, future = await queue.get()
+            if isinstance(async_ctx.context, StopContext):
+                break
+            data = await async_ctx.get_item(&quot;data&quot;)
+            await f.write(data)
+            future.set_result(async_ctx)
+
+task = AsyncServiceTask(writer_service, name=&quot;writer&quot;)
+</code></pre>
+<h3 id="syncfunctiontask">SyncFunctionTask</h3>
+<p>Simple synchronous task:</p>
+<pre><code class="language-python">def process(sync_ctx):
+    data = sync_ctx[&quot;key&quot;]
+    sync_ctx[&quot;key&quot;] = transform(data)
+    return sync_ctx
+
+task = SyncFunctionTask(process, name=&quot;process&quot;)
+</code></pre>
+<h3 id="shutdown-tasks">Shutdown Tasks</h3>
+<p>Shutdown tasks run cleanup logic after the DAG finishes. The callable must implement a <code>shutdown()</code> method alongside <code>__call__()</code>.</p>
+<p><strong>AsyncFunctionShutdownTask:</strong></p>
+<pre><code class="language-python">class FileUpload:
+    async def __call__(self, context):
+        return context
+
+    async def shutdown(self):
+        await cleanup()
+
+task = AsyncFunctionShutdownTask(FileUpload(), name=&quot;file_upload&quot;)
+</code></pre>
+<p><strong>SyncFunctionShutdownTask:</strong></p>
+<pre><code class="language-python">class FileUpload:
+    def __call__(self, context):
+        return context
+
+    def shutdown(self):
+        cleanup()
+
+task = SyncFunctionShutdownTask(FileUpload(), name=&quot;file_upload&quot;)
+</code></pre>
+<h2 id="task-configuration">Task Configuration</h2>
+<p>Each task accepts an optional <code>TaskConfig</code> for rate limiting:</p>
+<pre><code class="language-python">from shutils.dag import TaskConfig
+
+config = TaskConfig(
+    calls=100,   # Max calls within one period
+    period=1,    # Period in seconds
+)
+
+task = AsyncFunctionTask(process, config=config, name=&quot;process&quot;)
+</code></pre>
+<h2 id="building-a-dag">Building a DAG</h2>
+<pre><code class="language-python">from shutils.dag import DAG, AsyncFunctionTask, Executor
+
+dag = DAG()
+
+# Add tasks with dependencies
+dag.add_task(task_a)                  # No dependencies
+dag.add_task(task_b, [task_a])        # Depends on task_a
+dag.add_task(task_c, [task_a, task_b]) # Depends on both
+
+# Build the DAG (adds SourceNode and SinkNode)
+dag.build()
+</code></pre>
+<h2 id="executor">Executor</h2>
+<h3 id="offline-executor">Offline Executor</h3>
+<p>Batch executor that processes all contexts until completion:</p>
+<pre><code class="language-python">executor = Executor(dag)
+results = await executor.run()
+</code></pre>
+<h3 id="online-executor-serveexecutor">Online Executor (ServeExecutor)</h3>
+<p>Continuous executor for server scenarios:</p>
+<pre><code class="language-python">from shutils.dag import ServeExecutor, Context
+
+executor = ServeExecutor(dag)
+run_task = asyncio.create_task(executor.run())
+
+# Submit a context
+ctx = Context(executor.runtime)
+task_id = await executor.submit_task(ctx)
+
+# Check status
+status = await executor.get_task_status(task_id)
+
+# Get result
+result = await executor.get_task_result(task_id)
+</code></pre>
+<h3 id="configuration">Configuration</h3>
+<pre><code class="language-python">from shutils.dag import ExecutorConfig
+
+config = ExecutorConfig(
+    context_worker_num=2,    # Number of context workers
+    task_worker_num=4,       # Max concurrent tasks per context
+    context_queue_timeout=1.0,  # Queue timeout in seconds
+    enable_context_gc=True,  # Enable context garbage collection
+    enable_context_bypass=True,  # Enable bypass optimization
+)
+</code></pre>
+<h2 id="visualization">Visualization</h2>
+<p>Start a Flask-based web visualization server:</p>
+<pre><code class="language-python">from shutils.dag import DAG
+
+dag = DAG()
+# ... build dag ...
+dag.visualize(dag, host=&quot;0.0.0.0&quot;, port=8088)
+</code></pre>
+<p>Requires the <code>visualizer</code> extra: <code>pip install shutilspy[visualizer]</code></p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": [], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
