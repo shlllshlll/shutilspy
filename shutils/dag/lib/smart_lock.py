@@ -26,19 +26,21 @@ __all__ = [
     "is_async_callable",
 ]
 
+
 # [辅助函数] 健壮的异步函数检测 (支持 partial 等)
 def is_async_callable(obj) -> bool:
     """Check if an object is an async callable, handling partials."""
-    while isinstance(obj, (lambda:0).__class__) and hasattr(obj, "func"): # Handle partials
+    while isinstance(obj, (lambda: 0).__class__) and hasattr(obj, "func"):  # Handle partials
         obj = obj.func
     return inspect.iscoroutinefunction(obj) or (callable(obj) and inspect.iscoroutinefunction(obj.__call__))
+
 
 class LockStrategy(Enum):
     """Strategy for how a lock should be acquired in async context."""
 
-    AUTO = "auto"       # Auto-decide based on metrics
-    DIRECT = "direct"   # Block the event loop (for < 1ms operations)
-    ASYNC_WAIT = "wait" # Async wait without blocking the loop (1ms - 10ms)
+    AUTO = "auto"  # Auto-decide based on metrics
+    DIRECT = "direct"  # Block the event loop (for < 1ms operations)
+    ASYNC_WAIT = "wait"  # Async wait without blocking the loop (1ms - 10ms)
     EXECUTOR = "executor"  # Offload to thread pool (> 10ms)
 
 
@@ -68,6 +70,7 @@ class SmartLockConfig:
         warmup_count: Minimum samples before adaptive strategy kicks in.
         default_strategy: Fallback strategy when not enough data is available.
     """
+
     window_size: int = 1000
     metric_type: MetricType = MetricType.P90
     threshold_direct: float = 0.001
@@ -75,7 +78,7 @@ class SmartLockConfig:
     enable_sampling: bool = True
     sampling_interval: int = 10
     calc_interval_seconds: float = 0.5
-    executor: None | int | Executor = None
+    executor: int | Executor | None = None
     warmup_count: int = 10
     default_strategy: LockStrategy = LockStrategy.DIRECT
 
@@ -93,9 +96,7 @@ class GlobalExecutor:
             with cls._lock:
                 if cls._instance is None:
                     # 默认根据 CPU 核数自动调整
-                    cls._instance = ThreadPoolExecutor(
-                        thread_name_prefix="SmartLock-Global"
-                    )
+                    cls._instance = ThreadPoolExecutor(thread_name_prefix="SmartLock-Global")
         return cls._instance
 
 
@@ -117,9 +118,9 @@ class AdaptiveMetrics:
         self._counter = itertools.count()
 
         # --- 缓存状态 ---
-        self._cached_metric: float = 0.0    # 上次计算结果
-        self._last_calc_time: float = 0.0   # 上次计算时间
-        self._dirty: bool = False           # 数据是否已更新
+        self._cached_metric: float = 0.0  # 上次计算结果
+        self._last_calc_time: float = 0.0  # 上次计算时间
+        self._dirty: bool = False  # 数据是否已更新
 
     def record(self, duration: float):
         """Record an operation duration (write path with sampling)."""
@@ -186,7 +187,7 @@ class AdaptiveMetrics:
         # 4. 更新缓存
         self._cached_metric = val
         self._last_calc_time = now
-        self._dirty = False # 标记为干净
+        self._dirty = False  # 标记为干净
 
         return val
 
@@ -205,6 +206,7 @@ class AdaptiveMetrics:
             return LockStrategy.EXECUTOR
         else:
             return LockStrategy.ASYNC_WAIT
+
 
 class SmartLock:
     """Smart mutex lock supporting sync/async mixed usage and adaptive scheduling."""
@@ -271,6 +273,7 @@ class SmartLock:
         # Case A: 线程池卸载 (仅 Sync 函数)
         if strategy == LockStrategy.EXECUTOR and not is_async:
             loop = asyncio.get_running_loop()
+
             def _wrapped_task():
                 t0 = time.perf_counter()
                 with self._mutex:
@@ -278,12 +281,13 @@ class SmartLock:
                         return func(*args, **kwargs)
                     finally:
                         self._metrics.record(time.perf_counter() - t0)
+
             return await loop.run_in_executor(self._executor, _wrapped_task)
 
         # Case B: 直接模式 (Sync/Async)
         elif strategy == LockStrategy.DIRECT:
             t0 = time.perf_counter()
-            with self._mutex: # 警告：阻塞 Loop
+            with self._mutex:  # 警告：阻塞 Loop
                 try:
                     if is_async:
                         return await func(*args, **kwargs)
@@ -293,7 +297,7 @@ class SmartLock:
                     self._metrics.record(time.perf_counter() - t0)
 
         # Case C: 异步等待模式 (Sync/Async)
-        else: # ASYNC_WAIT
+        else:  # ASYNC_WAIT
             if self._mutex.acquire(blocking=False):
                 # Fast path: 拿到锁了
                 try:
@@ -442,6 +446,7 @@ class SmartRWLock:
         # 策略 1: EXECUTOR (仅 Sync)
         if strategy == LockStrategy.EXECUTOR and not is_async:
             loop = asyncio.get_running_loop()
+
             def _task():
                 t0 = time.perf_counter()
                 self._blocking_acquire_write()
@@ -451,6 +456,7 @@ class SmartRWLock:
                     duration = time.perf_counter() - t0
                     self._metrics.record(duration)
                     self._release_write()
+
             return await loop.run_in_executor(self._executor, _task)
 
         # 策略 2: DIRECT / ASYNC_WAIT (Sync/Async)
@@ -556,15 +562,23 @@ class SmartRWLock:
     # ==========================================
 
     class _ReadSyncContext(AbstractContextManager):
-        def __init__(self, lock: 'SmartRWLock'): self.lock = lock
-        def __enter__(self): self.lock._blocking_acquire_read()
-        def __exit__(self, *args): self.lock._release_read()
+        def __init__(self, lock: "SmartRWLock"):
+            self.lock = lock
+
+        def __enter__(self):
+            self.lock._blocking_acquire_read()
+
+        def __exit__(self, *args):
+            self.lock._release_read()
 
     class _WriteSyncContext(AbstractContextManager):
-        def __init__(self, lock: 'SmartRWLock'): self.lock = lock
+        def __init__(self, lock: "SmartRWLock"):
+            self.lock = lock
+
         def __enter__(self):
             self.start = time.perf_counter()
             self.lock._blocking_acquire_write()
+
         def __exit__(self, *args):
             # 记录耗时，供 SmartLock 学习
             duration = time.perf_counter() - self.start
@@ -572,7 +586,9 @@ class SmartRWLock:
             self.lock._release_write()
 
     class _ReadAsyncContext(AbstractAsyncContextManager):
-        def __init__(self, lock: 'SmartRWLock'): self.lock = lock
+        def __init__(self, lock: "SmartRWLock"):
+            self.lock = lock
+
         async def __aenter__(self):
             # 尝试非阻塞获取
             if self.lock._try_acquire_read():
@@ -585,7 +601,9 @@ class SmartRWLock:
             self.lock._release_read()
 
     class _WriteAsyncContext(AbstractAsyncContextManager):
-        def __init__(self, lock: 'SmartRWLock'): self.lock = lock
+        def __init__(self, lock: "SmartRWLock"):
+            self.lock = lock
+
         async def __aenter__(self):
             # 注意：async with 无法实现 EXECUTOR 策略（自动扔到线程池执行）
             # 所以这里只实现了 ASYNC_WAIT 策略
@@ -605,6 +623,7 @@ class SmartRWLock:
             self.lock._metrics.record(duration)
             self.lock._release_write()
 
+
 if __name__ == "__main__":
     import random
 
@@ -612,9 +631,9 @@ if __name__ == "__main__":
     config = SmartLockConfig(
         metric_type=MetricType.P95,
         window_size=50,
-        threshold_direct=0.0005, # 0.5ms
-        threshold_executor=0.002, # 2ms
-        executor=4 # 独享4线程池
+        threshold_direct=0.0005,  # 0.5ms
+        threshold_executor=0.002,  # 2ms
+        executor=4,  # 独享4线程池
     )
 
     cache_lock = SmartRWLock(config)
@@ -630,9 +649,9 @@ if __name__ == "__main__":
     def write_db_heavy(key: str, val: int):
         # 模拟重型写入 (IO + CPU)
         # 这里的耗时是随机的，模拟真实世界的波动
-        delay = random.uniform(0.001, 0.05) # 1ms ~ 50ms
+        delay = random.uniform(0.001, 0.05)  # 1ms ~ 50ms
         time.sleep(delay)
-        data_store['val'] = val
+        data_store["val"] = val
         return f"Updated {val} (cost {delay:.4f}s)"
 
     # --- 异步 Worker ---
@@ -672,6 +691,5 @@ if __name__ == "__main__":
         print("\n--- Final Metrics ---")
         print(f"Recorded Writes: {len(cache_lock._metrics.history)}")
         print(f"P95 Duration: {cache_lock._metrics.get_metric_value():.6f}s")
-
 
     asyncio.run(main())
