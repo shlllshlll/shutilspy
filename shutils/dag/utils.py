@@ -11,7 +11,6 @@ from contextlib import asynccontextmanager
 from .context import AsyncContext, SyncContext
 from .task import TaskBase
 
-
 _PYTHON_HAS_QUEUE_SHUTDOWN = sys.version_info >= (3, 13)
 _QUEUE_SHUTDOWN_ERROR = getattr(asyncio, "QueueShutDown", None)
 _QUEUE_PUT_ERRORS = ((asyncio.QueueFull, _QUEUE_SHUTDOWN_ERROR) if _PYTHON_HAS_QUEUE_SHUTDOWN else (asyncio.QueueFull,))
