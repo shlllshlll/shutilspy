@@ -88,7 +88,7 @@ jobs:
         env:
           ANACONDA_TOKEN: ${{ secrets.ANACONDA_TOKEN }}
         run: |
-          anaconda --token "$ANACONDA_TOKEN" upload --user shlllhub --label main conda-dist/*
+          conda run -n base anaconda --token "$ANACONDA_TOKEN" upload --user shlllhub --label main conda-dist/*
       - name: Create Release
         id: create_release
         uses: softprops/action-gh-release@v2
