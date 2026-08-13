@@ -1,4 +1,6 @@
 
+import asyncio
+
 import pytest
 
 from shutils.dag.lib.aio_queue import PriorityQueue, Queue, QueueEmpty, QueueFull
@@ -80,6 +82,24 @@ class TestAsyncQueue:
         await q.async_q.get()
         q.async_q.task_done()
         await q.async_q.join()
+
+    async def test_cancelled_waiter_after_wakeup_scheduled(self, monkeypatch):
+        q = Queue()
+        waiter = asyncio.get_running_loop().create_future()
+        scheduled_callbacks = []
+
+        def capture_callback(callback, *args):
+            scheduled_callbacks.append((callback, args))
+
+        monkeypatch.setattr(waiter.get_loop(), "call_soon_threadsafe", capture_callback)
+        q._async_getters.append(waiter)
+        q._wakeup_next(q._async_getters)
+
+        waiter.cancel()
+        callback, args = scheduled_callbacks.pop()
+        callback(*args)
+
+        assert waiter.cancelled()
 
 
 class TestSyncPriorityQueue:

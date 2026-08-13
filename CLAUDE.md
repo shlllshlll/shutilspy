@@ -4,7 +4,7 @@
 **shutilspy** (imports as `shutils`) — Python utilities: DAG async task framework, caching (TTL/LRU), rate limiting, RW locks, and dataclass parameter helpers.
 
 ## Environment
-- **Python**: >=3.13 (uses `asyncio.QueueShutDown`, `typing.override`, PEP 695 type aliases)
+- **Python**: >=3.12 (uses PEP 695 type aliases; `asyncio.Queue.shutdown` is guarded for Python 3.13+)
 - **Package manager**: pixi (conda + pypi)
 - **Install deps**: `pixi install`
 
@@ -50,7 +50,7 @@ shutils/
 ```
 
 ## Architecture Notes
-- DAG framework: async-first, uses `asyncio.QueueShutDown` for graceful shutdown
+- DAG framework: async-first; Python 3.13 queue shutdown APIs are guarded for older interpreters
 - Context/DataWhiteBoard: data flows between tasks via key-value stores
 - SmartLock: adaptive strategy selection (read-preferring vs write-preferring)
 - Cache: persistent via lzma+pickle, auto-save by step/interval, optimistic locking

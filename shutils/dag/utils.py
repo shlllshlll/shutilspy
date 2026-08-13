@@ -2,6 +2,7 @@
 
 import asyncio
 import concurrent.futures
+import sys
 import threading
 from collections import deque
 from collections.abc import AsyncGenerator, Callable, Coroutine
@@ -9,6 +10,11 @@ from contextlib import asynccontextmanager
 
 from .context import AsyncContext, SyncContext
 from .task import TaskBase
+
+
+_PYTHON_HAS_QUEUE_SHUTDOWN = sys.version_info >= (3, 13)
+_QUEUE_SHUTDOWN_ERROR = getattr(asyncio, "QueueShutDown", None)
+_QUEUE_PUT_ERRORS = ((asyncio.QueueFull, _QUEUE_SHUTDOWN_ERROR) if _PYTHON_HAS_QUEUE_SHUTDOWN else (asyncio.QueueFull,))
 
 __all__ = [
     "ResourcePool",
@@ -72,7 +78,7 @@ class ResourcePool[T]:
             if not self._closed:
                 try:
                     self._resource_queue.put_nowait(resource)
-                except (asyncio.QueueFull, asyncio.QueueShutDown):
+                except _QUEUE_PUT_ERRORS:
                     if self._release_func:
                         self._release_func(resource)
             else:
@@ -86,7 +92,8 @@ class ResourcePool[T]:
             resource = self._resource_queue.get_nowait()
             if self._release_func:
                 self._release_func(resource)
-        self._resource_queue.shutdown()
+        if _PYTHON_HAS_QUEUE_SHUTDOWN:
+            self._resource_queue.shutdown()
 
 
 def get_loop_safe_runner(coro: Coroutine) -> asyncio.Future | concurrent.futures.Future:

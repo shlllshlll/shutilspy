@@ -92,14 +92,20 @@ class _BaseQueue[T]:
                 self._loop = asyncio.get_running_loop()
         return self._loop
 
+    @staticmethod
+    def _set_result_unless_done(waiter: Future) -> None:
+        """Resolve a waiter unless it was completed after wakeup was scheduled."""
+        if not waiter.done():
+            waiter.set_result(None)
+
     def _wakeup_next(self, waiters: collections.deque[Future]) -> None:
         """Wake up the next async waiter safely."""
         while waiters:
             waiter = waiters.popleft()
             if not waiter.done():
-                # Notify the event loop from a potentially different thread
+                # The waiter can be cancelled before this callback runs.
                 loop = waiter.get_loop()
-                loop.call_soon_threadsafe(waiter.set_result, None)
+                loop.call_soon_threadsafe(self._set_result_unless_done, waiter)
                 break
 
     def close(self):

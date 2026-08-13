@@ -21,7 +21,7 @@ class DAG:
         self._downstream_tasks: dict[TaskBase, set[TaskBase]] = {}
         self._upstream_tasks: dict[TaskBase, set[TaskBase]] = {}
 
-    def add_task(self, task: TaskBase, dependencies: Iterable[TaskBase] | TaskBase = None):
+    def add_task(self, task: TaskBase, dependencies: Iterable[TaskBase] | TaskBase | None = None):
         """Add a task to the DAG with optional upstream dependencies.
 
         Args:
@@ -155,7 +155,5 @@ class DAG:
         """
         downstream_tasks = self._get_all_downstream_tasks(task_list)
         task_set = set(task_list) if isinstance(task_list, Iterable) else {task_list}
-        bypass_tasks = (
-            self._task_set - downstream_tasks - self._get_all_upstream_tasks(task_list) - task_set
-        )
+        bypass_tasks = self._task_set - downstream_tasks - self._get_all_upstream_tasks(task_list) - task_set
         return bypass_tasks
